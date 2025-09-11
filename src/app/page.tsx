@@ -3,12 +3,14 @@ import React, { useState } from 'react'
 import TopBar from '@/components/TopBar'
 import Sidebar, { ViewMode } from '@/components/Sidebar'
 import CanvasArea from '@/components/CanvasArea'
+import type { TemplateKind } from '@/core/model'
 import ThreePlaceholder from '@/components/ThreePlaceholder'
 
 export default function Page() {
   // 日本語コメント: フェーズ1のUI骨格（上部バー＋左サイドバー＋中央キャンバス）
   const [expanded, setExpanded] = useState(true)
   const [view, setView] = useState<ViewMode>('plan')
+  const [template, setTemplate] = useState<TemplateKind>('rect')
   const onSave = () => {
     // 日本語コメント: 保存（ダミー）
     alert('保存（ダミー）')
@@ -21,9 +23,9 @@ export default function Page() {
     <div className="h-dvh flex flex-col">
       <TopBar onSave={onSave} onLoad={onLoad} />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar expanded={expanded} current={view} onSelectView={setView} onToggle={() => setExpanded(v => !v)} />
+        <Sidebar expanded={expanded} current={view} onSelectView={setView} onToggle={() => setExpanded(v => !v)} onSelectTemplate={setTemplate} currentTemplate={template} />
         <main className="flex-1">
-          {view === '3d' ? <ThreePlaceholder /> : <CanvasArea />}
+          {view === '3d' ? <ThreePlaceholder /> : <CanvasArea template={template} />}
         </main>
       </div>
     </div>
