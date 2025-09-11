@@ -56,3 +56,7 @@
 - Maintain a repository-level action log in `activity.log` (Japanese only).
 - Summarize performed actions per session or PR with date/time and short bullets.
   - Example: `2025-09-11: 初期コミット、AGENTS追加、リモート設定`.
+
+## Development Flow Compliance
+- Follow the development process defined in `docs/Development-Flow.md`.
+- Issues/PRs must satisfy Ready/Done definitions and use the checklist.
