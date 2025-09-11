@@ -41,3 +41,18 @@
 ## Security & Configuration
 - Do not commit secrets. Use `.env.local` and provide `.env.example`.
 - Add `.gitignore` entries for local artifacts (e.g., caches, env files, build outputs).
+
+## Language & Documentation Policy
+- Output language: Japanese by default for user-facing messages (出力は日本語で).
+- Code comments: write clear Japanese comments to explain intent and tricky logic.
+  - Example (TS): `// 日本語で目的や前提を簡潔に説明する`
+  - Example (Py): `# 日本語コメントで処理の意図を残す`
+- Checklists: when work is verified, tick relevant checkboxes in Issues/PRs.
+  - Use GitHub markdown: `- [ ] 未対応` → `- [x] 完了`
+- Documentation: maintain bilingual docs (EN/JA) and keep them in sync.
+  - Example: `README.md` + `README.ja.md`, `AGENTS.md` + `AGENTS.ja.md`.
+
+## Action Logging
+- Maintain a repository-level action log in `activity.log` (Japanese only).
+- Summarize performed actions per session or PR with date/time and short bullets.
+  - Example: `2025-09-11: 初期コミット、AGENTS追加、リモート設定`.
