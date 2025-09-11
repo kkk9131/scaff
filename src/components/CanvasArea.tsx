@@ -69,7 +69,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
     const ro = new ResizeObserver(draw)
     ro.observe(canvas)
     return () => ro.disconnect()
-  }, [])
+  }, [template])
 
   return <canvas ref={ref} className="w-full h-full bg-[#0f1113]" />
 }
