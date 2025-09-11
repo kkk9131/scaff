@@ -1,6 +1,8 @@
 import React from 'react'
 
-export const Sidebar: React.FC<{ expanded: boolean; onToggle: () => void }> = ({ expanded, onToggle }) => {
+export type ViewMode = 'plan' | 'elev' | '3d'
+
+export const Sidebar: React.FC<{ expanded: boolean; onToggle: () => void; onSelectView?: (v: ViewMode) => void; current?: ViewMode }> = ({ expanded, onToggle, onSelectView, current = 'plan' }) => {
   // 日本語コメント: 左サイドバー。アイコンのみ表示→展開可能（簡易版）
   return (
     <aside className={`h-full bg-[var(--panel)] border-r border-neutral-800 transition-all duration-200 ${expanded ? 'w-56' : 'w-14'}`}>
@@ -11,9 +13,9 @@ export const Sidebar: React.FC<{ expanded: boolean; onToggle: () => void }> = ({
       </div>
       <div className="p-3 space-y-2">
         <div className="text-xs text-neutral-400">ビュー</div>
-        <button className="w-full px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-left">平面</button>
-        <button className="w-full px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-left">立面</button>
-        <button className="w-full px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-left">3D</button>
+        <button className={`w-full px-2 py-1 rounded text-left ${current==='plan'?'bg-neutral-600':'bg-neutral-700 hover:bg-neutral-600'}`} onClick={() => onSelectView?.('plan')}>平面</button>
+        <button className={`w-full px-2 py-1 rounded text-left ${current==='elev'?'bg-neutral-600':'bg-neutral-700 hover:bg-neutral-600'}`} onClick={() => onSelectView?.('elev')}>立面</button>
+        <button className={`w-full px-2 py-1 rounded text-left ${current==='3d'?'bg-neutral-600':'bg-neutral-700 hover:bg-neutral-600'}`} onClick={() => onSelectView?.('3d')}>3D</button>
       </div>
     </aside>
   )
