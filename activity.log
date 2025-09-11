@@ -8,3 +8,4 @@
 2025-09-11 設定: shadcn/ui 用ボイラープレート追加（tailwindcss-animate、utils、Button、components.json）。
 2025-09-11 完了: Tailwind + shadcn/ui 導入をチェックし、.gitignore に .next/ を追加。
 2025-09-11 開発: Three.js + postprocessing の最小プレースホルダーを追加（3Dビュー切替対応）。
+2025-09-11 ドキュメント: 開発フローをブランチ運用版に更新（英/日）。
