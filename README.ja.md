@@ -14,8 +14,11 @@
 - `assets/` 静的資産（今後追加）
 
 ## 開発
-- いまはビルド不要。`docs/` はエディタのMarkdownプレビューで確認。
-- コード追加後は `package.json`（Node）やPythonツールでスクリプトを定義。
+- Node/Next.js を使用。初回セットアップ:
+  - `npm install`
+  - 開発: `npm run dev` → http://localhost:3000
+  - ビルド: `npm run build` / 実行: `npm start`
+  - いまは最小UI（上部バー/左サイドバー/中央Canvasのプレースホルダー）のみ。
 
 ## コントリビュート
 - スタイル/テスト/PR ルールは `AGENTS.ja.md` を参照。

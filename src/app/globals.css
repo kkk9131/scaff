@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #111315;
+  --panel: #1b1f23;
+}
+
+html, body, #__next { height: 100%; }
+body { background: var(--bg); color: white; }
+
+.neon {
+  text-shadow: 0 0 8px rgba(57, 255, 136, 0.6);
+}

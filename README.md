@@ -14,8 +14,11 @@ A docs-first repository for a drawing editor MVP. Core specifications live under
 - `assets/` static assets (to be added)
 
 ## Development
-- No build yet; use your editor’s Markdown preview for `docs/`.
-- When code is added, define scripts in `package.json` or tooling in Python.
+- Node/Next.js based. First-time setup:
+  - `npm install`
+  - Dev: `npm run dev` → http://localhost:3000
+  - Build: `npm run build` / Start: `npm start`
+  - Currently includes minimal UI: top bar, left sidebar, center Canvas placeholder.
 
 ## Contributing
 - Read `AGENTS.md` for style, tests, and PR rules.
