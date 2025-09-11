@@ -25,7 +25,10 @@ export const CanvasArea: React.FC = () => {
       ctx.clearRect(0, 0, cssBounds.width, cssBounds.height)
 
       // 日本語コメント: スケール（px/mm）。例: 1px=5mm → 0.2px/mm
-      const pxPerMm = DEFAULT_PX_PER_MM
+      // ただし初期表示で全体が見えるよう、ビューに収まるスケールへ自動調整（上限は既定値）。
+      const wFit = cssBounds.width * 0.9 / INITIAL_RECT.widthMm
+      const hFit = cssBounds.height * 0.9 / INITIAL_RECT.heightMm
+      const pxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
 
       // 日本語コメント: 初期長方形（中心配置）。モデル(mm)→CSS px に変換して描画
       const wPx = lengthToScreen(INITIAL_RECT.widthMm, pxPerMm)
