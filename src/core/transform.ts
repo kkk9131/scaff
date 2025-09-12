@@ -18,3 +18,13 @@ export function lengthToScreen(lenMm: number, pxPerMm: number = DEFAULT_PX_PER_M
   return lenMm * pxPerMm
 }
 
+// 日本語コメント: 画面座標(CSS px) → モデル座標(mm)
+export function screenToModel(pPx: Vec2, viewSize: CanvasSizeCss, pxPerMm: number = DEFAULT_PX_PER_MM): Vec2 {
+  const cx = viewSize.width / 2
+  const cy = viewSize.height / 2
+  // 画面の +Y(下) を モデルの +Y(上) に反転して戻す
+  return {
+    x: (pPx.x - cx) / pxPerMm,
+    y: (cy - pPx.y) / pxPerMm,
+  }
+}

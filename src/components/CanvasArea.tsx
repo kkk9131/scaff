@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 // 日本語コメント: 内部モデル（mm単位）と座標変換のユーティリティ
 import { DEFAULT_PX_PER_MM } from '@/core/units'
 import { bboxOf, outlineOf, TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_T, outlineL, outlineU, outlineT, bboxOfL, bboxOfU, bboxOfT } from '@/core/model'
-import { lengthToScreen, modelToScreen } from '@/core/transform'
+import { lengthToScreen, modelToScreen, screenToModel } from '@/core/transform'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
 export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = 'rect' }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
@@ -11,6 +11,18 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
   const [lMm, setLMm] = useState(INITIAL_L)
   const [uMm, setUMm] = useState(INITIAL_U)
   const [tMm, setTMm] = useState(INITIAL_T)
+
+  // 日本語コメント: 描画やイベント内で最新値を参照するための参照
+  const rectRef = useRef(rectMm)
+  const lRef = useRef(lMm)
+  const uRef = useRef(uMm)
+  const tRef = useRef(tMm)
+  const templateRef = useRef<TemplateKind>(template)
+  useEffect(() => { rectRef.current = rectMm }, [rectMm])
+  useEffect(() => { lRef.current = lMm }, [lMm])
+  useEffect(() => { uRef.current = uMm }, [uMm])
+  useEffect(() => { tRef.current = tMm }, [tMm])
+  useEffect(() => { templateRef.current = template }, [template])
 
   useEffect(() => {
     const canvas = ref.current!
@@ -30,14 +42,15 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
 
       // 日本語コメント: スケール（px/mm）。例: 1px=5mm → 0.2px/mm
       // 形状のバウンディングボックスでオートフィット（上限は既定値）。
-      const bb = template === 'rect' ? rectMm : template === 'l' ? bboxOfL(lMm) : template === 'u' ? bboxOfU(uMm) : bboxOfT(tMm)
+      const kind = templateRef.current
+      const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
       const wFit = cssBounds.width * 0.9 / bb.widthMm
       const hFit = cssBounds.height * 0.9 / bb.heightMm
       const pxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
 
       const center = modelToScreen({ x: 0, y: 0 }, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
       // 日本語コメント: モデル生成（外形ポリゴン）
-      const poly = template === 'rect' ? outlineRect(rectMm) : template === 'l' ? outlineL(lMm) : template === 'u' ? outlineU(uMm) : outlineT(tMm)
+      const poly = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
       // 描画
       ctx.strokeStyle = '#35a2ff'
       ctx.lineWidth = 2
@@ -67,7 +80,17 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
       ctx.font = '12px ui-sans-serif, system-ui, -apple-system'
       ctx.fillText(`スケール: ${pxPerMm.toFixed(3)} px/mm (1px=${(1/pxPerMm).toFixed(1)}mm)`, 10, 18)
       // 日本語コメント: 平面図の方位表現（東西=幅, 南北=奥行）で表示
-      ctx.fillText(`テンプレート: ${template.toUpperCase()}  寸法: 東西=${bb.widthMm}mm  南北=${bb.heightMm}mm`, 10, 34)
+      ctx.fillText(`テンプレート: ${kind.toUpperCase()}  寸法: 東西=${bb.widthMm}mm  南北=${bb.heightMm}mm`, 10, 34)
+
+      // 日本語コメント: 頂点ハンドルを描画（小さな白丸）
+      ctx.fillStyle = '#ffffff'
+      const r = 3
+      for (const p of poly) {
+        const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+        ctx.beginPath()
+        ctx.arc(s.x, s.y, r, 0, Math.PI * 2)
+        ctx.fill()
+      }
     }
 
     draw()
@@ -80,14 +103,15 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
       const y = ev.clientY - cssBounds.top
 
       // スケールを描画と同様に算出
-      const bbNow = template === 'rect' ? rectMm : template === 'l' ? bboxOfL(lMm) : template === 'u' ? bboxOfU(uMm) : bboxOfT(tMm)
+      const kind = templateRef.current
+      const bbNow = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
       const wFit = cssBounds.width * 0.9 / bbNow.widthMm
       const hFit = cssBounds.height * 0.9 / bbNow.heightMm
       const pxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
       const center = modelToScreen({ x: 0, y: 0 }, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
 
       // 現在形状のスクリーン座標ポリライン（閉路）を生成
-      const polyMm = template === 'rect' ? outlineRect(rectMm) : template === 'l' ? outlineL(lMm) : template === 'u' ? outlineU(uMm) : outlineT(tMm)
+      const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
       const poly = polyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
       // エッジ列挙（終点→始点で閉路）
       type EdgeInfo = { a: {x:number;y:number}, b: {x:number;y:number}, key: string }
@@ -137,7 +161,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
         ? (n.x > 0 ? '東' : '西')
         : (n.y > 0 ? '北' : '南')
       const edgeLabel = `辺${edgeNum}${dir}`
-      if (template === 'rect') {
+      if (kind === 'rect') {
         // 辺インデックス: 0=上,1=右,2=下,3=左
         const idx = best.idx % 4
         if (idx === 0 || idx === 2) {
@@ -145,15 +169,17 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setRectMm(r => ({ ...r, widthMm: mm }))
+          setRectMm(r => { const next = { ...r, widthMm: mm }; rectRef.current = next; return next })
+          draw()
         } else {
           const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(rectMm.heightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setRectMm(r => ({ ...r, heightMm: mm }))
+          setRectMm(r => { const next = { ...r, heightMm: mm }; rectRef.current = next; return next })
+          draw()
         }
-      } else if (template === 'l') {
+      } else if (kind === 'l') {
         // L: 0=上(左部分:東西→幅), 1=内側縦(南北→切欠高), 2=内側上(東西→切欠幅), 3=右外側縦(南北→外形高), 4=下(東西→外形幅), 5=左外側縦(南北→外形高)
         const idx = best.idx % 6
         if (idx === 0 || idx === 4) {
@@ -161,27 +187,31 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setLMm(p => ({ ...p, widthMm: mm }))
+          setLMm(p => { const next = { ...p, widthMm: mm }; lRef.current = next; return next })
+          draw()
         } else if (idx === 3 || idx === 5) {
           const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(lMm.heightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setLMm(p => ({ ...p, heightMm: mm }))
+          setLMm(p => { const next = { ...p, heightMm: mm }; lRef.current = next; return next })
+          draw()
         } else if (idx === 1) {
           const val = window.prompt(`${edgeLabel} の長さ（切欠きの南北, mm）を入力`, String(lMm.cutHeightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setLMm(p => ({ ...p, cutHeightMm: mm }))
+          setLMm(p => { const next = { ...p, cutHeightMm: mm }; lRef.current = next; return next })
+          draw()
         } else if (idx === 2) {
           const val = window.prompt(`${edgeLabel} の長さ（切欠きの東西, mm）を入力`, String(lMm.cutWidthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setLMm(p => ({ ...p, cutWidthMm: mm }))
+          setLMm(p => { const next = { ...p, cutWidthMm: mm }; lRef.current = next; return next })
+          draw()
         }
-      } else if (template === 'u') {
+      } else if (kind === 'u') {
         // U: 0=上(左),1=内側左縦(南北→深さ),2=内側底(東西→開口幅),3=内側右縦(南北→深さ),4=上(右),5=右外側縦(南北→外形高),6=下(東西→外形幅),7=左外側縦(南北→外形高)
         const idx = best.idx % 8
         if (idx === 6 || idx === 0 || idx === 4) {
@@ -189,27 +219,31 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setUMm(p => ({ ...p, widthMm: mm }))
+          setUMm(p => { const next = { ...p, widthMm: mm }; uRef.current = next; return next })
+          draw()
         } else if (idx === 5 || idx === 7) {
           const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(uMm.heightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setUMm(p => ({ ...p, heightMm: mm }))
+          setUMm(p => { const next = { ...p, heightMm: mm }; uRef.current = next; return next })
+          draw()
         } else if (idx === 2) {
           const val = window.prompt(`${edgeLabel} の長さ（開口の東西, mm）を入力`, String(uMm.innerWidthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setUMm(p => ({ ...p, innerWidthMm: mm }))
+          setUMm(p => { const next = { ...p, innerWidthMm: mm }; uRef.current = next; return next })
+          draw()
         } else if (idx === 1 || idx === 3) {
           const val = window.prompt(`${edgeLabel} の長さ（開口の南北=深さ, mm）を入力`, String(uMm.depthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setUMm(p => ({ ...p, depthMm: mm }))
+          setUMm(p => { const next = { ...p, depthMm: mm }; uRef.current = next; return next })
+          draw()
         }
-      } else if (template === 't') {
+      } else if (kind === 't') {
         // T: 0=上バー上辺(東西→バー幅),1=バー右縦(南北→バー厚),2=上部水平(一部),3=柱右縦(南北→柱高),4=柱底(東西→柱幅),5=柱左縦(南北→柱高),6=上部水平(一部),7=バー左縦(南北→バー厚)
         const idx = best.idx % 8
         if (idx === 0) {
@@ -217,13 +251,15 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setTMm(p => ({ ...p, barWidthMm: mm }))
+          setTMm(p => { const next = { ...p, barWidthMm: mm }; tRef.current = next; return next })
+          draw()
         } else if (idx === 1 || idx === 7) {
           const val = window.prompt(`${edgeLabel} の長さ（バー厚=南北, mm）を入力`, String(tMm.barThickMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setTMm(p => ({ ...p, barThickMm: mm }))
+          setTMm(p => { const next = { ...p, barThickMm: mm }; tRef.current = next; return next })
+          draw()
         } else if (idx === 2 || idx === 6) {
           // 日本語コメント: バー下の左右短水平は (バー幅 - 柱幅)/2 に相当。
           const segDefault = Math.max(1, (tMm.barWidthMm - tMm.stemWidthMm) / 2)
@@ -232,29 +268,92 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
           const newBarWidth = tMm.stemWidthMm + 2 * mm
-          setTMm(p => ({ ...p, barWidthMm: newBarWidth }))
+          setTMm(p => { const next = { ...p, barWidthMm: newBarWidth }; tRef.current = next; return next })
+          draw()
         } else if (idx === 3 || idx === 5) {
           const val = window.prompt(`${edgeLabel} の長さ（柱の南北=高さ, mm）を入力`, String(tMm.stemHeightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setTMm(p => ({ ...p, stemHeightMm: mm }))
+          setTMm(p => { const next = { ...p, stemHeightMm: mm }; tRef.current = next; return next })
+          draw()
         } else if (idx === 4) {
           const val = window.prompt(`${edgeLabel} の長さ（柱の東西=幅, mm）を入力`, String(tMm.stemWidthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setTMm(p => ({ ...p, stemWidthMm: mm }))
+          setTMm(p => { const next = { ...p, stemWidthMm: mm }; tRef.current = next; return next })
+          draw()
         }
       }
     }
     canvas.addEventListener('click', onClick)
 
+    // 日本語コメント: 頂点ドラッグ編集（フェーズ2: まずは矩形に対応）
+    let draggingVertexIdx: number | null = null
+    let dragPxPerMm: number | null = null
+    let dragBounds: { width: number; height: number } | null = null
+    const onMouseDown = (ev: MouseEvent) => {
+      const cssBounds = canvas.getBoundingClientRect()
+      const x = ev.clientX - cssBounds.left
+      const y = ev.clientY - cssBounds.top
+      const kind = templateRef.current
+      const bbNow = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+      const wFit = cssBounds.width * 0.9 / bbNow.widthMm
+      const hFit = cssBounds.height * 0.9 / bbNow.heightMm
+      const pxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
+      const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
+      const thresholdPx = 8
+      let hitIdx: number | null = null
+      for (let i = 0; i < polyMm.length; i++) {
+        const s = modelToScreen(polyMm[i], { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+        const dx = s.x - x
+        const dy = s.y - y
+        if (dx*dx + dy*dy <= thresholdPx*thresholdPx) { hitIdx = i; break }
+      }
+      if (hitIdx != null) {
+        draggingVertexIdx = hitIdx
+        dragPxPerMm = pxPerMm
+        dragBounds = { width: cssBounds.width, height: cssBounds.height }
+        window.addEventListener('mousemove', onMouseMove)
+        window.addEventListener('mouseup', onMouseUp, { once: true })
+      }
+    }
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (draggingVertexIdx == null) return
+      // 日本語コメント: 現状は矩形のみサポート（中心は原点固定）
+      if (templateRef.current !== 'rect') return
+      const cssBounds = canvas.getBoundingClientRect()
+      const x = ev.clientX - cssBounds.left
+      const y = ev.clientY - cssBounds.top
+      const pxPerMm = dragPxPerMm ?? DEFAULT_PX_PER_MM
+      const viewSize = dragBounds ?? { width: cssBounds.width, height: cssBounds.height }
+      const ptMm = screenToModel({ x, y }, viewSize, pxPerMm)
+      const newW = Math.max(1, Math.abs(ptMm.x) * 2)
+      const newH = Math.max(1, Math.abs(ptMm.y) * 2)
+      const next = { ...rectRef.current, widthMm: Math.round(newW), heightMm: Math.round(newH) }
+      rectRef.current = next
+      setRectMm(next)
+      draw()
+    }
+
+    const onMouseUp = (_ev: MouseEvent) => {
+      draggingVertexIdx = null
+      window.removeEventListener('mousemove', onMouseMove)
+      dragPxPerMm = null
+      dragBounds = null
+    }
+
+    canvas.addEventListener('mousedown', onMouseDown)
+
     return () => {
       ro.disconnect()
       canvas.removeEventListener('click', onClick)
+      canvas.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('mousemove', onMouseMove)
     }
-  }, [template, rectMm, lMm, uMm, tMm])
+  }, [])
 
   return <canvas ref={ref} className="w-full h-full bg-[#0f1113]" />
 }
