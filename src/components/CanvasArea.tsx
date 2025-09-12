@@ -18,11 +18,12 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
   const uRef = useRef(uMm)
   const tRef = useRef(tMm)
   const templateRef = useRef<TemplateKind>(template)
+  const drawRef = useRef<() => void>()
   useEffect(() => { rectRef.current = rectMm }, [rectMm])
   useEffect(() => { lRef.current = lMm }, [lMm])
   useEffect(() => { uRef.current = uMm }, [uMm])
   useEffect(() => { tRef.current = tMm }, [tMm])
-  useEffect(() => { templateRef.current = template }, [template])
+  useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
 
   useEffect(() => {
     const canvas = ref.current!
@@ -92,6 +93,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
         ctx.fill()
       }
     }
+    drawRef.current = draw
 
     draw()
     const ro = new ResizeObserver(draw)
@@ -322,19 +324,85 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
 
     const onMouseMove = (ev: MouseEvent) => {
       if (draggingVertexIdx == null) return
-      // 日本語コメント: 現状は矩形のみサポート（中心は原点固定）
-      if (templateRef.current !== 'rect') return
       const cssBounds = canvas.getBoundingClientRect()
       const x = ev.clientX - cssBounds.left
       const y = ev.clientY - cssBounds.top
       const pxPerMm = dragPxPerMm ?? DEFAULT_PX_PER_MM
       const viewSize = dragBounds ?? { width: cssBounds.width, height: cssBounds.height }
       const ptMm = screenToModel({ x, y }, viewSize, pxPerMm)
-      const newW = Math.max(1, Math.abs(ptMm.x) * 2)
-      const newH = Math.max(1, Math.abs(ptMm.y) * 2)
-      const next = { ...rectRef.current, widthMm: Math.round(newW), heightMm: Math.round(newH) }
-      rectRef.current = next
-      setRectMm(next)
+      const kind = templateRef.current
+      if (kind === 'rect') {
+        const newW = Math.max(1, Math.abs(ptMm.x) * 2)
+        const newH = Math.max(1, Math.abs(ptMm.y) * 2)
+        const next = { ...rectRef.current, widthMm: Math.round(newW), heightMm: Math.round(newH) }
+        rectRef.current = next
+        setRectMm(next)
+      } else if (kind === 'l') {
+        const cur = lRef.current
+        const idx = draggingVertexIdx % 6
+        let { widthMm: W, heightMm: H, cutWidthMm: cw, cutHeightMm: ch } = cur
+        const hw = W / 2, hh = H / 2
+        if (idx === 0) { // (-hw, hh)
+          W = Math.max(1, Math.abs(ptMm.x) * 2)
+          H = Math.max(1, Math.abs(ptMm.y) * 2)
+        } else if (idx === 1) { // (hw - cw, hh)
+          cw = Math.max(1, Math.min(W - 1, Math.round(W/2 - ptMm.x)))
+          H = Math.max(1, Math.abs(ptMm.y) * 2)
+        } else if (idx === 2) { // (hw - cw, hh - ch)
+          cw = Math.max(1, Math.min(W - 1, Math.round(W/2 - ptMm.x)))
+          ch = Math.max(1, Math.min(H - 1, Math.round(H/2 - ptMm.y)))
+        } else if (idx === 3) { // (hw, hh - ch)
+          W = Math.max(1, Math.abs(ptMm.x) * 2)
+          ch = Math.max(1, Math.min(H - 1, Math.round(H/2 - ptMm.y)))
+        } else if (idx === 4) { // (hw, -hh)
+          W = Math.max(1, Math.abs(ptMm.x) * 2)
+          H = Math.max(1, Math.abs(ptMm.y) * 2)
+        } else if (idx === 5) { // (-hw, -hh)
+          W = Math.max(1, Math.abs(ptMm.x) * 2)
+          H = Math.max(1, Math.abs(ptMm.y) * 2)
+        }
+        // 整合性のためのクランプ
+        cw = Math.min(cw, Math.max(1, Math.round(W - 1)))
+        ch = Math.min(ch, Math.max(1, Math.round(H - 1)))
+        const next = { widthMm: Math.round(W), heightMm: Math.round(H), cutWidthMm: Math.round(cw), cutHeightMm: Math.round(ch) }
+        lRef.current = next
+        setLMm(next)
+      } else if (kind === 'u') {
+        const cur = uRef.current
+        const idx = draggingVertexIdx % 8
+        let { widthMm: W, heightMm: H, innerWidthMm: iw, depthMm: d } = cur
+        if (idx === 0 || idx === 5 || idx === 6 || idx === 7) {
+          W = Math.max(1, Math.abs(ptMm.x) * 2)
+          H = Math.max(1, Math.abs(ptMm.y) * 2)
+        } else if (idx === 1 || idx === 4) { // (±iw/2, hh)
+          iw = Math.max(1, Math.min(W - 1, Math.round(Math.abs(ptMm.x) * 2)))
+          H = Math.max(1, Math.abs(ptMm.y) * 2)
+        } else if (idx === 2 || idx === 3) { // (±iw/2, hh - d)
+          iw = Math.max(1, Math.min(W - 1, Math.round(Math.abs(ptMm.x) * 2)))
+          d = Math.max(1, Math.min(H - 1, Math.round(H/2 - ptMm.y)))
+        }
+        const next = { widthMm: Math.round(W), heightMm: Math.round(H), innerWidthMm: Math.round(iw), depthMm: Math.round(d) }
+        uRef.current = next
+        setUMm(next)
+      } else if (kind === 't') {
+        const cur = tRef.current
+        const idx = draggingVertexIdx % 8
+        let { barWidthMm: bw, barThickMm: bt, stemWidthMm: sw, stemHeightMm: sh } = cur
+        if (idx === 0 || idx === 1 || idx === 2 || idx === 7) { // バー角
+          bw = Math.max(1, Math.round(Math.abs(ptMm.x) * 2))
+          bt = Math.max(1, Math.round(Math.abs(ptMm.y) * 2))
+        } else if (idx === 3 || idx === 6) { // バー下・柱上の角
+          sw = Math.max(1, Math.min(bw - 1, Math.round(Math.abs(ptMm.x) * 2)))
+          bt = Math.max(1, Math.round(Math.abs(ptMm.y) * 2))
+        } else if (idx === 4 || idx === 5) { // 柱の底
+          sw = Math.max(1, Math.min(bw - 1, Math.round(Math.abs(ptMm.x) * 2)))
+          // sh は stemBottomY = -(bt/2 + sh) から復元
+          sh = Math.max(1, Math.round(-ptMm.y - bt / 2))
+        }
+        const next = { barWidthMm: bw, barThickMm: bt, stemWidthMm: sw, stemHeightMm: sh }
+        tRef.current = next
+        setTMm(next)
+      }
       draw()
     }
 
