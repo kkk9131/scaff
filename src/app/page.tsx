@@ -16,7 +16,9 @@ export default function Page() {
     show: true as boolean,
     outsideMode: 'auto' as 'auto' | 'left' | 'right',
     offset: 16 as number,
+    offsetUnit: 'px' as 'px' | 'mm',
     decimals: 0 as number,
+    avoidCollision: true as boolean,
   })
   const [snap, setSnap] = useState({
     enableGrid: SNAP_DEFAULTS.enableGrid,
@@ -48,18 +50,18 @@ export default function Page() {
     <div className="h-dvh flex flex-col">
       <TopBar onSave={onSave} onLoad={onLoad} />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          expanded={expanded}
-          current={view}
-          onSelectView={setView}
-          onToggle={() => setExpanded(v => !v)}
-          onSelectTemplate={setTemplate}
-          currentTemplate={template}
-          snap={snap}
-          onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
-          dimensions={dimensions}
-          onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
-        />
+          <Sidebar
+            expanded={expanded}
+            current={view}
+            onSelectView={setView}
+            onToggle={() => setExpanded(v => !v)}
+            onSelectTemplate={setTemplate}
+            currentTemplate={template}
+            snap={snap}
+            onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
+            dimensions={dimensions}
+            onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
+          />
         <main className="flex-1">
           {view === '3d' ? <ThreePlaceholder /> : (
             <CanvasArea

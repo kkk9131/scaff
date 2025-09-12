@@ -14,8 +14,8 @@ export const Sidebar: React.FC<{
   currentTemplate?: TemplateKind
   snap?: Pick<SnapOptions, 'enableGrid' | 'gridMm' | 'enableOrtho' | 'orthoToleranceDeg'>
   onUpdateSnap?: (patch: Partial<Pick<SnapOptions, 'enableGrid' | 'gridMm' | 'enableOrtho' | 'orthoToleranceDeg'>>) => void
-  dimensions?: { show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; decimals: number }
-  onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; decimals: number }>) => void
+  dimensions?: { show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }
+  onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }>) => void
 }> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
@@ -162,7 +162,7 @@ export const Sidebar: React.FC<{
               </select>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <label className="text-neutral-300">オフセット(px)</label>
+              <label className="text-neutral-300">オフセット</label>
               <input
                 type="number"
                 min={0}
@@ -174,6 +174,14 @@ export const Sidebar: React.FC<{
                   onUpdateDimensions?.({ offset: v })
                 }}
               />
+              <select
+                className="w-20 px-2 py-1 bg-neutral-800 border border-neutral-700 rounded"
+                value={dimensions?.offsetUnit ?? 'px'}
+                onChange={(e) => onUpdateDimensions?.({ offsetUnit: (e.target.value as any) })}
+              >
+                <option value="px">px</option>
+                <option value="mm">mm</option>
+              </select>
             </div>
             <div className="flex items-center justify-between gap-2">
               <label className="text-neutral-300">小数桁</label>
@@ -188,6 +196,13 @@ export const Sidebar: React.FC<{
                   onUpdateDimensions?.({ decimals: v })
                 }}
               />
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-neutral-300">ラベル回避</label>
+              <button
+                className={`px-2 py-1 rounded ${dimensions?.avoidCollision ? 'bg-green-700' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                onClick={() => onUpdateDimensions?.({ avoidCollision: !dimensions?.avoidCollision })}
+              >{dimensions?.avoidCollision ? 'ON' : 'OFF'}</button>
             </div>
           </div>
         )}

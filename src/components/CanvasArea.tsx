@@ -7,7 +7,7 @@ import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
 // 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
 import { DimensionEngine } from '@/core/dimensions/dimension_engine'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; decimals?: number } }> = ({ template = 'rect', snapOptions, dimensionOptions }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean } }> = ({ template = 'rect', snapOptions, dimensionOptions }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -108,7 +108,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         // クリア
         while (svg.firstChild) svg.removeChild(svg.firstChild)
         // 寸法線を計算（外側=自動/手動）
-        const offsetPx = opts?.offset ?? 16
+        const offsetRaw = opts?.offset ?? 16
+        const offsetPx = (opts?.offsetUnit === 'mm') ? offsetRaw * pxPerMm : offsetRaw
         const decimals = opts?.decimals ?? 0
         const mode = opts?.outsideMode ?? 'auto'
         let dims
@@ -139,7 +140,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           le.setAttribute('stroke-width', '1')
           svg.appendChild(le)
         }
-        // 寸法線とラベル
+        // 寸法線
         for (const d of dims) {
           const dl = document.createElementNS(NS, 'line')
           dl.setAttribute('x1', String(d.start.x))
@@ -150,17 +151,52 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           dl.setAttribute('stroke-width', '1.5')
           dl.setAttribute('fill', 'none')
           svg.appendChild(dl)
+        }
 
-          const tx = document.createElementNS(NS, 'text')
+        // ラベル（衝突回避に対応）
+        const labels: { el: SVGTextElement; dim: typeof dims[number] }[] = []
+        for (const d of dims) {
+          const tx = document.createElementNS(NS, 'text') as SVGTextElement
           tx.setAttribute('x', String(d.textAnchor.x))
           tx.setAttribute('y', String(d.textAnchor.y - 4))
           tx.setAttribute('fill', '#0d6efd')
           tx.setAttribute('font-size', '12')
-          // 日本語コメント: mm単位で表示（小数桁は設定に従う）
           const edgeIdx = Number(d.edgeId?.replace('e', '')) || 0
           const mmVal = mmLengths[edgeIdx] ?? 0
           tx.textContent = `${mmVal.toFixed(decimals)} mm`
           svg.appendChild(tx)
+          labels.push({ el: tx, dim: d })
+        }
+        if (opts?.avoidCollision) {
+          // 先行配置と重なる場合は外側法線方向へ段階的に押し出す
+          const step = 10, maxIter = 10
+          for (let i = 0; i < labels.length; i++) {
+            const li = labels[i]
+            // 外側法線: 寸法線の中点 - 元エッジ中点
+            const a = polyScreen[i]
+            const b = polyScreen[(i + 1) % polyScreen.length]
+            const edgeMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+            const dimMid = { x: (li.dim.start.x + li.dim.end.x) / 2, y: (li.dim.start.y + li.dim.end.y) / 2 }
+            let nx = dimMid.x - edgeMid.x, ny = dimMid.y - edgeMid.y
+            const nlen = Math.hypot(nx, ny) || 1; nx /= nlen; ny /= nlen
+            let moved = 0
+            for (let iter = 0; iter < maxIter; iter++) {
+              const bboxI = li.el.getBBox()
+              let overlap = false
+              for (let j = 0; j < i; j++) {
+                const bboxJ = labels[j].el.getBBox()
+                if (!(bboxI.x + bboxI.width < bboxJ.x || bboxJ.x + bboxJ.width < bboxI.x || bboxI.y + bboxI.height < bboxJ.y || bboxJ.y + bboxJ.height < bboxI.y)) {
+                  overlap = true; break
+                }
+              }
+              if (!overlap) break
+              moved += step
+              const x = li.dim.textAnchor.x + nx * moved
+              const y = li.dim.textAnchor.y - 4 + ny * moved
+              li.el.setAttribute('x', String(x))
+              li.el.setAttribute('y', String(y))
+            }
+          }
         }
       } else if (svg && !showDims) {
         while (svg.firstChild) svg.removeChild(svg.firstChild)
