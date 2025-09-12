@@ -81,3 +81,8 @@
 
 2025-09-13 01:35: エディタの寸法表示を mm に変更
 - CanvasArea の寸法ラベルを内部モデルの長さ（mm）で表示（整数mm）
+
+2025-09-13 01:50: サイドバーに寸法設定を追加・CanvasArea対応
+- Sidebar に寸法パネル（表示ON/OFF、外側モード、自動/左/右、オフセット、小数桁）を追加
+- Page から CanvasArea へ設定をpropで連携
+- CanvasArea 側で outsideMode/offset/decimals と表示ON/OFFを反映

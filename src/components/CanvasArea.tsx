@@ -7,7 +7,7 @@ import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
 // 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
 import { DimensionEngine } from '@/core/dimensions/dimension_engine'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions }> = ({ template = 'rect', snapOptions }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; decimals?: number } }> = ({ template = 'rect', snapOptions, dimensionOptions }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -95,15 +95,25 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
 
       // 日本語コメント: 寸法線オーバーレイ（SVG）を更新
       const svg = svgRef.current
-      if (svg) {
+      const showDims = dimensionOptions?.show ?? true
+      if (svg && showDims) {
         // サイズとviewBoxをCanvasと一致させる
         svg.setAttribute('width', String(cssBounds.width))
         svg.setAttribute('height', String(cssBounds.height))
         svg.setAttribute('viewBox', `0 0 ${cssBounds.width} ${cssBounds.height}`)
         // クリア
         while (svg.firstChild) svg.removeChild(svg.firstChild)
-        // 寸法線を計算（外側=自動: CW/CCWで決定）
-        const dims = dimEngineRef.current.computeForPolygon(polyScreen, { offset: 16, decimals: 1 })
+        // 寸法線を計算（外側=自動/手動）
+        const offsetPx = dimensionOptions?.offset ?? 16
+        const decimals = dimensionOptions?.decimals ?? 0
+        const mode = dimensionOptions?.outsideMode ?? 'auto'
+        let dims
+        if (mode === 'auto') {
+          dims = dimEngineRef.current.computeForPolygon(polyScreen, { offset: offsetPx, decimals })
+        } else {
+          const edges = polyScreen.map((p, i) => ({ a: p, b: polyScreen[(i + 1) % polyScreen.length], id: `e${i}` }))
+          dims = dimEngineRef.current.computeForEdges(edges, { offset: offsetPx, decimals, outsideIsLeftNormal: mode === 'left' })
+        }
         // ラベル値は内部モデル(mm)に基づいて表示（単位=mm）
         const mmLengths: number[] = []
         for (let i = 0; i < polyMm.length; i++) {
@@ -142,12 +152,14 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           tx.setAttribute('y', String(d.textAnchor.y - 4))
           tx.setAttribute('fill', '#0d6efd')
           tx.setAttribute('font-size', '12')
-          // 日本語コメント: mm単位で整数表示（必要に応じて小数も可）
+          // 日本語コメント: mm単位で表示（小数桁は設定に従う）
           const edgeIdx = Number(d.edgeId?.replace('e', '')) || 0
           const mmVal = mmLengths[edgeIdx] ?? 0
-          tx.textContent = `${Math.round(mmVal)} mm`
+          tx.textContent = `${mmVal.toFixed(decimals)} mm`
           svg.appendChild(tx)
         }
+      } else if (svg && !showDims) {
+        while (svg.firstChild) svg.removeChild(svg.firstChild)
       }
 
       // 日本語コメント: 原点と軸の簡易ガイド（座標系の可視化）

@@ -12,6 +12,12 @@ export default function Page() {
   const [expanded, setExpanded] = useState(true)
   const [view, setView] = useState<ViewMode>('plan')
   const [template, setTemplate] = useState<TemplateKind>('rect')
+  const [dimensions, setDimensions] = useState({
+    show: true as boolean,
+    outsideMode: 'auto' as 'auto' | 'left' | 'right',
+    offset: 16 as number,
+    decimals: 0 as number,
+  })
   const [snap, setSnap] = useState({
     enableGrid: SNAP_DEFAULTS.enableGrid,
     gridMm: SNAP_DEFAULTS.gridMm,
@@ -51,9 +57,17 @@ export default function Page() {
           currentTemplate={template}
           snap={snap}
           onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
+          dimensions={dimensions}
+          onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
         />
         <main className="flex-1">
-          {view === '3d' ? <ThreePlaceholder /> : <CanvasArea template={template} snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }} />}
+          {view === '3d' ? <ThreePlaceholder /> : (
+            <CanvasArea
+              template={template}
+              snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }}
+              dimensionOptions={dimensions}
+            />
+          )}
         </main>
       </div>
     </div>
