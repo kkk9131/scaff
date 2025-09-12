@@ -104,6 +104,13 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         while (svg.firstChild) svg.removeChild(svg.firstChild)
         // 寸法線を計算（外側=自動: CW/CCWで決定）
         const dims = dimEngineRef.current.computeForPolygon(polyScreen, { offset: 16, decimals: 1 })
+        // ラベル値は内部モデル(mm)に基づいて表示（単位=mm）
+        const mmLengths: number[] = []
+        for (let i = 0; i < polyMm.length; i++) {
+          const a = polyMm[i]
+          const b = polyMm[(i + 1) % polyMm.length]
+          mmLengths.push(Math.hypot(b.x - a.x, b.y - a.y))
+        }
         const NS = 'http://www.w3.org/2000/svg'
         // 辺の可視化（控えめな青）
         for (let i = 0; i < polyScreen.length; i++) {
@@ -135,7 +142,10 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           tx.setAttribute('y', String(d.textAnchor.y - 4))
           tx.setAttribute('fill', '#0d6efd')
           tx.setAttribute('font-size', '12')
-          tx.textContent = `${d.value.toFixed(1)} ${d.units ?? 'px'}`
+          // 日本語コメント: mm単位で整数表示（必要に応じて小数も可）
+          const edgeIdx = Number(d.edgeId?.replace('e', '')) || 0
+          const mmVal = mmLengths[edgeIdx] ?? 0
+          tx.textContent = `${Math.round(mmVal)} mm`
           svg.appendChild(tx)
         }
       }

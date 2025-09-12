@@ -78,3 +78,6 @@
 2025-09-13 01:25: CanvasArea に寸法オーバーレイを統合
 - `src/components/CanvasArea.tsx` に SVG オーバーレイを追加（絶対配置）
 - コア `DimensionEngine` を用いて多角形のCW/CCWから外側を自動判定し、寸法線＋ラベルを描画
+
+2025-09-13 01:35: エディタの寸法表示を mm に変更
+- CanvasArea の寸法ラベルを内部モデルの長さ（mm）で表示（整数mm）
