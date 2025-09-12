@@ -154,25 +154,44 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         }
 
         // ラベル（衝突回避に対応）
-        const labels: { el: SVGTextElement; dim: typeof dims[number] }[] = []
+        const labels: { el: SVGTextElement; dim: typeof dims[number]; baseX: number; baseY: number }[] = []
         for (const d of dims) {
           const tx = document.createElementNS(NS, 'text') as SVGTextElement
-          tx.setAttribute('x', String(d.textAnchor.x))
-          tx.setAttribute('y', String(d.textAnchor.y - 4))
+          const baseX = d.textAnchor.x
+          const baseY = d.textAnchor.y - 4
+          tx.setAttribute('x', String(baseX))
+          tx.setAttribute('y', String(baseY))
           tx.setAttribute('fill', '#0d6efd')
           tx.setAttribute('font-size', '12')
           const edgeIdx = Number(d.edgeId?.replace('e', '')) || 0
           const mmVal = mmLengths[edgeIdx] ?? 0
           tx.textContent = `${mmVal.toFixed(decimals)} mm`
           svg.appendChild(tx)
-          labels.push({ el: tx, dim: d })
+          labels.push({ el: tx, dim: d, baseX, baseY })
         }
         if (opts?.avoidCollision) {
-          // 先行配置と重なる場合は外側法線方向へ段階的に押し出す
+          // 先行配置や辺/寸法線と重なる場合は外側法線方向へ段階的に押し出す
           const step = 10, maxIter = 10
+          const buffer = 4 // 線との交差判定の許容量
+
+          const rectExpand = (bb: DOMRect, pad: number) => ({ x: bb.x - pad, y: bb.y - pad, width: bb.width + 2*pad, height: bb.height + 2*pad })
+          const ptInRect = (x: number, y: number, r: {x:number;y:number;width:number;height:number}) => (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height)
+          const segOverlapsRect = (x1:number,y1:number,x2:number,y2:number, r:{x:number;y:number;width:number;height:number}, pad:number) => {
+            // サンプリングで近似（十分に軽量）
+            const rr = { x: r.x - pad, y: r.y - pad, width: r.width + 2*pad, height: r.height + 2*pad }
+            const n = 16
+            for (let i=0;i<=n;i++) {
+              const t = i / n
+              const x = x1 + (x2 - x1) * t
+              const y = y1 + (y2 - y1) * t
+              if (ptInRect(x, y, rr)) return true
+            }
+            return false
+          }
+
           for (let i = 0; i < labels.length; i++) {
             const li = labels[i]
-            // 外側法線: 寸法線の中点 - 元エッジ中点
+            // 外側法線: 寸法線の中点 - 元エッジ中点（i番目のエッジを対応付け）
             const a = polyScreen[i]
             const b = polyScreen[(i + 1) % polyScreen.length]
             const edgeMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
@@ -189,6 +208,22 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
                   overlap = true; break
                 }
               }
+              // 辺（ポリゴン）との交差
+              if (!overlap) {
+                const rb = rectExpand(bboxI, 0)
+                for (let k=0;k<polyScreen.length;k++) {
+                  const p1 = polyScreen[k]
+                  const p2 = polyScreen[(k+1)%polyScreen.length]
+                  if (segOverlapsRect(p1.x, p1.y, p2.x, p2.y, rb, buffer)) { overlap = true; break }
+                }
+              }
+              // 寸法線との交差
+              if (!overlap) {
+                const rb = rectExpand(bboxI, 0)
+                for (const d of dims) {
+                  if (segOverlapsRect(d.start.x, d.start.y, d.end.x, d.end.y, rb, buffer)) { overlap = true; break }
+                }
+              }
               if (!overlap) break
               moved += step
               const x = li.dim.textAnchor.x + nx * moved
@@ -196,6 +231,34 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
               li.el.setAttribute('x', String(x))
               li.el.setAttribute('y', String(y))
             }
+          }
+        }
+
+        // リーダー線（ラベルが基準位置から一定以上ずれた場合に描画）
+        for (const li of labels) {
+          const curX = Number(li.el.getAttribute('x') || li.baseX)
+          const curY = Number(li.el.getAttribute('y') || li.baseY)
+          const dx = curX - li.baseX
+          const dy = curY - li.baseY
+          if (Math.hypot(dx, dy) > 6) {
+            // 寸法線への最近点を求め、そこからラベルへ細い線を引く
+            const x1 = li.dim.start.x, y1 = li.dim.start.y
+            const x2 = li.dim.end.x, y2 = li.dim.end.y
+            const vx = x2 - x1, vy = y2 - y1
+            const wx = curX - x1, wy = curY - y1
+            const c2 = vx*vx + vy*vy
+            const t = c2 === 0 ? 0 : Math.max(0, Math.min(1, (vx*wx + vy*wy) / c2))
+            const px = x1 + vx * t
+            const py = y1 + vy * t
+            const leader = document.createElementNS(NS, 'line')
+            leader.setAttribute('x1', String(px))
+            leader.setAttribute('y1', String(py))
+            leader.setAttribute('x2', String(curX))
+            leader.setAttribute('y2', String(curY))
+            leader.setAttribute('stroke', '#0d6efd')
+            leader.setAttribute('stroke-width', '1')
+            leader.setAttribute('stroke-dasharray', '3 2')
+            svg.appendChild(leader)
           }
         }
       } else if (svg && !showDims) {
