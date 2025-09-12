@@ -36,3 +36,9 @@
 - UIモジュール統合版（推奨）: `assets/demo-dimensions/index-ui.html`
   - `src/ui/svg/dimension-renderer.js` を利用した構成。オフセット・小数桁・外側判定をUIで変更可能。
   - 将来的にエディタへ統合する際のベースとなるAPIです。
+
+注意（ファイル直開きでボタンが反応しない場合）
+- 一部ブラウザでは `type="module"` を使うページを `file://` で開くと、モジュール読込がCORS制限で失敗します。
+- 対処方法:
+  - その1: リポジトリルートで `python3 -m http.server 8000` を実行し、`http://localhost:8000/assets/demo-dimensions/index-ui.html` を開く
+  - その2: モジュール不要のインライン版 `assets/demo-dimensions/index-ui-inline.html` を直接開く（file直開き対応）
