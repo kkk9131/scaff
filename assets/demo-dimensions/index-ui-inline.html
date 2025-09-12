@@ -97,9 +97,18 @@
             });
           }
         }
-        _line(x1, y1, x2, y2, cls) { const el = document.createElementNS('http://www.w3.org/2000/svg', 'line'); el.setAttribute('x1', x1); el.setAttribute('y1', y1); el.setAttribute('x2', x2); el.setAttribute('y2', y2); if (cls) el.setAttribute('class', cls); return el; }
+        _line(x1, y1, x2, y2, cls) {
+          const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          el.setAttribute('x1', x1); el.setAttribute('y1', y1);
+          el.setAttribute('x2', x2); el.setAttribute('y2', y2);
+          if (cls) el.setAttribute('class', cls);
+          // 直接属性でもスタイルを指定（CSSが反映されない環境の保険）
+          if (cls === 'edge') { el.setAttribute('stroke', '#111'); el.setAttribute('stroke-width', '2'); }
+          if (cls === 'dim') { el.setAttribute('stroke', '#0d6efd'); el.setAttribute('stroke-width', '1.5'); el.setAttribute('fill', 'none'); }
+          return el;
+        }
         _circle(cx, cy, r, cls) { const el = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); el.setAttribute('cx', cx); el.setAttribute('cy', cy); el.setAttribute('r', r); if (cls) el.setAttribute('class', cls); return el; }
-        _text(x, y, content, cls) { const el = document.createElementNS('http://www.w3.org/2000/svg', 'text'); el.setAttribute('x', x); el.setAttribute('y', y); if (cls) el.setAttribute('class', cls); el.textContent = content; return el; }
+        _text(x, y, content, cls) { const el = document.createElementNS('http://www.w3.org/2000/svg', 'text'); el.setAttribute('x', x); el.setAttribute('y', y); if (cls) el.setAttribute('class', cls); el.textContent = content; el.setAttribute('fill', '#0d6efd'); return el; }
         _setupEvents() {
           this.svg.addEventListener('pointerdown', (e) => {
             const target = e.target;
@@ -135,4 +144,3 @@
     </script>
   </body>
   </html>
-
