@@ -32,10 +32,10 @@
   - `dimension_engine.ts`: 配列の Edge から寸法線を生成、または `computeForPolygon(points)` で向き自動判定
  - テスト: `tests/core/dimensions/dimension_engine.spec.ts`（雛形）
  
- ## 次ステップ / Next Steps
- - UI 層（`src/ui/`）での描画バインディング
- - 単位変換・スケール（ズーム）対応
- - オーバーラップ回避・ラベル衝突解消
+## 次ステップ / Next Steps
+- UI 層（`src/ui/`）での描画バインディング（実装済・SVGレンダラ）
+- 単位変換・スケール（ズーム）対応
+- ラベル衝突回避（実装済・外側方向へ段階オフセット）
  
  ---
  

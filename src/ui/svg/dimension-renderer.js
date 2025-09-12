@@ -5,10 +5,10 @@ import { DimensionEngine } from '../../core/dimensions/dimension-engine.js';
 
 export class DimensionRenderer {
   // svgEl: <svg> 要素
-  // options: { showHandles?: boolean, offset?: number, decimals?: number, outsideIsLeftNormal?: boolean, outsideMode?: 'auto' | 'left' | 'right' }
+  // options: { showHandles?: boolean, offset?: number, decimals?: number, outsideIsLeftNormal?: boolean, outsideMode?: 'auto' | 'left' | 'right', avoidLabelCollision?: boolean, labelSeparationStep?: number, labelSeparationMaxIter?: number }
   constructor(svgEl, options = {}) {
     this.svg = svgEl;
-    this.options = { showHandles: true, offset: 16, decimals: 1, outsideIsLeftNormal: true, outsideMode: 'auto', ...options };
+    this.options = { showHandles: true, offset: 16, decimals: 1, outsideIsLeftNormal: true, outsideMode: 'auto', avoidLabelCollision: true, labelSeparationStep: 10, labelSeparationMaxIter: 10, ...options };
     this.engine = new DimensionEngine();
     this.points = []; // [{x,y}]
     this._drag = null; // { idx, pointerId }
@@ -64,8 +64,47 @@ export class DimensionRenderer {
     }
     for (const d of dims) {
       this.svg.appendChild(this._line(d.start.x, d.start.y, d.end.x, d.end.y, 'dim'));
-      const label = `${d.value.toFixed(this.options.decimals)} ${d.units ?? 'px'}`;
-      this.svg.appendChild(this._text(d.textAnchor.x, d.textAnchor.y - 4, label, 'label'));
+    }
+
+    // ラベル配置（衝突回避）
+    const edgeById = new Map();
+    edges.forEach(e => edgeById.set(e.id, e));
+    const labels = [];
+    for (let i = 0; i < dims.length; i++) {
+      const d = dims[i];
+      const labelText = `${d.value.toFixed(this.options.decimals)} ${d.units ?? 'px'}`;
+      const textEl = this._text(d.textAnchor.x, d.textAnchor.y - 4, labelText, 'label');
+      this.svg.appendChild(textEl); // まず追加してBBox取得を可能にする
+      labels.push({ el: textEl, dim: d });
+    }
+
+    if (this.options.avoidLabelCollision) {
+      const step = this.options.labelSeparationStep;
+      const maxIter = this.options.labelSeparationMaxIter;
+      for (let i = 0; i < labels.length; i++) {
+        const li = labels[i];
+        const ei = edgeById.get(li.dim.edgeId);
+        const edgeMid = ei ? { x: (ei.a.x + ei.b.x) / 2, y: (ei.a.y + ei.b.y) / 2 } : { x: (li.dim.start.x + li.dim.end.x) / 2, y: (li.dim.start.y + li.dim.end.y) / 2 };
+        const dimMid = { x: (li.dim.start.x + li.dim.end.x) / 2, y: (li.dim.start.y + li.dim.end.y) / 2 };
+        let nx = dimMid.x - edgeMid.x; let ny = dimMid.y - edgeMid.y;
+        const nlen = Math.hypot(nx, ny) || 1; nx /= nlen; ny /= nlen;
+
+        let moved = 0;
+        for (let iter = 0; iter < maxIter; iter++) {
+          const bboxI = li.el.getBBox();
+          let overlap = false;
+          for (let j = 0; j < i; j++) {
+            const bboxJ = labels[j].el.getBBox();
+            if (overlaps(bboxI, bboxJ)) { overlap = true; break; }
+          }
+          if (!overlap) break;
+          moved += step;
+          const x = li.dim.textAnchor.x + nx * moved;
+          const y = li.dim.textAnchor.y - 4 + ny * moved;
+          li.el.setAttribute('x', x);
+          li.el.setAttribute('y', y);
+        }
+      }
     }
 
     // ハンドル
@@ -132,4 +171,9 @@ export class DimensionRenderer {
     this.svg.addEventListener('pointerup', () => { this._drag = null; });
     this.svg.addEventListener('pointercancel', () => { this._drag = null; });
   }
+}
+
+// SVG BBox の交差判定
+function overlaps(a, b) {
+  return !(a.x + a.width < b.x || b.x + b.width < a.x || a.y + a.height < b.y || b.y + b.height < a.y);
 }
