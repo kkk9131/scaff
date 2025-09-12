@@ -5,3 +5,7 @@
 - テスト雛形 `tests/core/dimensions/dimension_engine.spec.ts` を追加
 - リポジトリ概要 `README.ja.md` を追加
 
+2025-09-12: デモ追加・JSエンジン用意
+- ブラウザ用JS版エンジン `src/core/dimensions/dimension-engine.js` を追加
+- ビルド不要のSVGデモ `assets/demo-dimensions/index.html` を追加
+- READMEにデモの使い方を追記

@@ -12,7 +12,7 @@
  - `tests/` テスト（最小の雛形）
  - `activity.log` 作業ログ（日本語）
  
- ## 開発コマンド（暫定）
+## 開発コマンド（暫定）
  ツールチェーンは未導入です。導入後に更新します。
  - Nodeの想定コマンド（予定）
    - 開発: `npm run dev`
@@ -23,6 +23,13 @@
    - 実行: `uv run app.py`
    - フォーマット: `uvx ruff format`
  
- ## ドキュメント優先
- コード変更時は `docs/` を先に更新・同期します。今回の方針は `docs/design/dimensions-always-visible.md` を参照してください。
+## ドキュメント優先
+コード変更時は `docs/` を先に更新・同期します。今回の方針は `docs/design/dimensions-always-visible.md` を参照してください。
+
+## 動作確認（デモ）
+ビルド不要のブラウザデモを同梱しています。
+
+- ファイルを直接開く: `assets/demo-dimensions/index.html`
+  - 矩形の頂点をドラッグすると、各辺の外側に寸法線と数値が常時更新されます。
+  - 現状の単位は `px`、小数1桁の表示です。
 
