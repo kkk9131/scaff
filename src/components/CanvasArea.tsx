@@ -12,6 +12,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
   const ref = useRef<HTMLCanvasElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dimEngineRef = useRef(new DimensionEngine())
+  // 寸法設定は描画クロージャから参照するためRefに保持
+  const dimOptsRef = useRef(dimensionOptions)
   const [rectMm, setRectMm] = useState(INITIAL_RECT)
   const [lMm, setLMm] = useState(INITIAL_L)
   const [uMm, setUMm] = useState(INITIAL_U)
@@ -29,6 +31,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
   useEffect(() => { uRef.current = uMm }, [uMm])
   useEffect(() => { tRef.current = tMm }, [tMm])
   useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
+  useEffect(() => { dimOptsRef.current = dimensionOptions; drawRef.current?.() }, [dimensionOptions])
 
   useEffect(() => {
     const canvas = ref.current!
@@ -95,7 +98,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
 
       // 日本語コメント: 寸法線オーバーレイ（SVG）を更新
       const svg = svgRef.current
-      const showDims = dimensionOptions?.show ?? true
+      const opts = dimOptsRef.current
+      const showDims = opts?.show ?? true
       if (svg && showDims) {
         // サイズとviewBoxをCanvasと一致させる
         svg.setAttribute('width', String(cssBounds.width))
@@ -104,9 +108,9 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         // クリア
         while (svg.firstChild) svg.removeChild(svg.firstChild)
         // 寸法線を計算（外側=自動/手動）
-        const offsetPx = dimensionOptions?.offset ?? 16
-        const decimals = dimensionOptions?.decimals ?? 0
-        const mode = dimensionOptions?.outsideMode ?? 'auto'
+        const offsetPx = opts?.offset ?? 16
+        const decimals = opts?.decimals ?? 0
+        const mode = opts?.outsideMode ?? 'auto'
         let dims
         if (mode === 'auto') {
           dims = dimEngineRef.current.computeForPolygon(polyScreen, { offset: offsetPx, decimals })

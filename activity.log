@@ -86,3 +86,7 @@
 - Sidebar に寸法パネル（表示ON/OFF、外側モード、自動/左/右、オフセット、小数桁）を追加
 - Page から CanvasArea へ設定をpropで連携
 - CanvasArea 側で outsideMode/offset/decimals と表示ON/OFFを反映
+
+2025-09-13 02:00: 寸法設定の反映不具合を修正
+- CanvasArea で寸法設定を useRef に保持し、変更時に再描画
+- これにより表示ON/OFF・外側モード・オフセット・小数桁が即時反映
