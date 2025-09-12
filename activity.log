@@ -9,3 +9,8 @@
 - ブラウザ用JS版エンジン `src/core/dimensions/dimension-engine.js` を追加
 - ビルド不要のSVGデモ `assets/demo-dimensions/index.html` を追加
 - READMEにデモの使い方を追記
+
+2025-09-12: UI統合モジュール追加
+- SVGレンダラ `src/ui/svg/dimension-renderer.js` を追加
+- UI統合デモ `assets/demo-dimensions/index-ui.html` を追加
+- READMEにUI統合デモの説明を追記

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>寸法線デモ（UIモジュール統合）</title>
+    <style>
+      html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+      .toolbar { padding: 8px 12px; border-bottom: 1px solid #e5e5e5; display: flex; gap: 12px; align-items: center; }
+      .wrap { height: calc(100% - 42px); display: grid; place-items: center; background: #fafafa; }
+      svg { background: white; border: 1px solid #ddd; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+      .edge { stroke: #111; stroke-width: 2; }
+      .dim { stroke: #0d6efd; stroke-width: 1.5; fill: none; }
+      .label { fill: #0d6efd; font-size: 12px; user-select: none; }
+      .handle { fill: #ff6b6b; cursor: grab; }
+      .handle:active { cursor: grabbing; }
+      input[type='range'] { vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <strong>寸法線デモ（UI統合）</strong>
+      <label>オフセット: <input id="offset" type="range" min="0" max="60" value="16" /></label>
+      <label>小数桁: <input id="dec" type="number" min="0" max="3" step="1" value="1" style="width:4em;" /></label>
+      <label><input id="leftNormal" type="checkbox" checked /> 外側=左法線</label>
+    </div>
+    <div class="wrap">
+      <svg id="stage" width="800" height="520" viewBox="0 0 800 520"></svg>
+    </div>
+    <script type="module">
+      import { DimensionRenderer } from '../../src/ui/svg/dimension-renderer.js';
+
+      const stage = document.getElementById('stage');
+      const renderer = new DimensionRenderer(stage, { showHandles: true });
+      const points = [
+        { x: 200, y: 160 },
+        { x: 500, y: 160 },
+        { x: 500, y: 360 },
+        { x: 200, y: 360 },
+      ];
+      renderer.setPoints(points);
+
+      // コントロール連携
+      const offset = document.getElementById('offset');
+      const dec = document.getElementById('dec');
+      const leftNormal = document.getElementById('leftNormal');
+
+      offset.addEventListener('input', () => renderer.setOptions({ offset: Number(offset.value) }));
+      dec.addEventListener('input', () => renderer.setOptions({ decimals: Number(dec.value) }));
+      leftNormal.addEventListener('change', () => renderer.setOptions({ outsideIsLeftNormal: leftNormal.checked }));
+    </script>
+  </body>
+  </html>
+
