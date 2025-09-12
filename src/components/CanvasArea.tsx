@@ -3,9 +3,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import { DEFAULT_PX_PER_MM } from '@/core/units'
 import { bboxOf, outlineOf, TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_T, outlineL, outlineU, outlineT, bboxOfL, bboxOfU, bboxOfT } from '@/core/model'
 import { lengthToScreen, modelToScreen, screenToModel } from '@/core/transform'
-import { applySnaps, SNAP_DEFAULTS } from '@/core/snap'
+import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = 'rect' }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions }> = ({ template = 'rect', snapOptions }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
   const [rectMm, setRectMm] = useState(INITIAL_RECT)
@@ -52,9 +52,10 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
 
       const center = modelToScreen({ x: 0, y: 0 }, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
 
-      // 日本語コメント: グリッド描画（スナップ可視化）。薄い線で 50mm 間隔
-      if (SNAP_DEFAULTS.enableGrid && SNAP_DEFAULTS.gridMm > 0) {
-        const stepPx = SNAP_DEFAULTS.gridMm * pxPerMm
+      const snap = snapOptions ?? SNAP_DEFAULTS
+      // 日本語コメント: グリッド描画（スナップ可視化）。薄い線で gridMm 間隔
+      if (snap.enableGrid && snap.gridMm > 0) {
+        const stepPx = snap.gridMm * pxPerMm
         if (stepPx >= 8) { // 粗すぎる描画を避ける
           ctx.strokeStyle = 'rgba(255,255,255,0.06)'
           ctx.lineWidth = 1
@@ -107,7 +108,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
       // 日本語コメント: 平面図の方位表現（東西=幅, 南北=奥行）で表示
       ctx.fillText(`テンプレート: ${kind.toUpperCase()}  寸法: 東西=${bb.widthMm}mm  南北=${bb.heightMm}mm`, 10, 34)
       // 日本語コメント: スナップ設定の簡易表示
-      ctx.fillText(`Snap: Grid=${SNAP_DEFAULTS.enableGrid ? SNAP_DEFAULTS.gridMm + 'mm' : 'off'} / Ortho=${SNAP_DEFAULTS.enableOrtho ? ('±' + SNAP_DEFAULTS.orthoToleranceDeg + '°') : 'off'}` , 10, 50)
+      ctx.fillText(`Snap: Grid=${snap.enableGrid ? snap.gridMm + 'mm' : 'off'} / Ortho=${snap.enableOrtho ? ('±' + snap.orthoToleranceDeg + '°') : 'off'}` , 10, 50)
 
       // 日本語コメント: 頂点ハンドルを描画（小さな白丸）
       ctx.fillStyle = '#ffffff'
@@ -357,7 +358,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind }> = ({ template = '
       const viewSize = dragBounds ?? { width: cssBounds.width, height: cssBounds.height }
       // 日本語コメント: マウス位置（mm）を算出し、スナップ適用
       const rawMm = screenToModel({ x, y }, viewSize, pxPerMm)
-      const ptMm = applySnaps(rawMm, { ...SNAP_DEFAULTS, anchor: { x: 0, y: 0 } })
+      const snapApply = snapOptions ?? SNAP_DEFAULTS
+      const ptMm = applySnaps(rawMm, { ...snapApply, anchor: { x: 0, y: 0 } })
       const kind = templateRef.current
       if (kind === 'rect') {
         const newW = Math.max(1, Math.abs(ptMm.x) * 2)
