@@ -1,5 +1,4 @@
 // 日本語コメント: 内部モデルの最小定義（テンプレート長方形）。単位=mm、座標=中心原点。
-<<<<<<< HEAD
 import type { Vec2 } from './units'
 
 // 日本語コメント: テンプレート種別
@@ -36,62 +35,16 @@ export const INITIAL_T: TTemplate = { barWidthMm: 9000, barThickMm: 2000, stemWi
 export function outlineOf(kind: TemplateKind): Vec2[] {
   switch (kind) {
     case 'rect': {
-      const { widthMm: W, heightMm: H } = INITIAL_RECT
-      const hw = W / 2, hh = H / 2
-      return [
-        { x: -hw, y: hh },
-        { x: hw, y: hh },
-        { x: hw, y: -hh },
-        { x: -hw, y: -hh },
-      ]
+      return outlineRect(INITIAL_RECT)
     }
     case 'l': {
-      const { widthMm: W, heightMm: H, cutWidthMm: cw, cutHeightMm: ch } = INITIAL_L
-      const hw = W / 2, hh = H / 2
-      // 右上角を (cw, ch) 切り欠いた L字（上向き前提）
-      return [
-        { x: -hw, y: hh },
-        { x: hw - cw, y: hh },
-        { x: hw - cw, y: hh - ch },
-        { x: hw, y: hh - ch },
-        { x: hw, y: -hh },
-        { x: -hw, y: -hh },
-      ]
+      return outlineL(INITIAL_L)
     }
     case 'u': {
-      const { widthMm: W, heightMm: H, innerWidthMm: iw, depthMm: d } = INITIAL_U
-      const hw = W / 2, hh = H / 2
-      // U字（上に開口、中央開き）。上辺の中央 iw 幅を d だけ下に凹ませる
-      // 上辺左→開口左→凹み底→開口右→上辺右→右下→左下→戻り
-      return [
-        { x: -hw, y: hh },
-        { x: -iw / 2, y: hh },
-        { x: -iw / 2, y: hh - d },
-        { x: iw / 2, y: hh - d },
-        { x: iw / 2, y: hh },
-        { x: hw, y: hh },
-        { x: hw, y: -hh },
-        { x: -hw, y: -hh },
-      ]
+      return outlineU(INITIAL_U)
     }
     case 't': {
-      const { barWidthMm: bw, barThickMm: bt, stemWidthMm: sw, stemHeightMm: sh } = INITIAL_T
-      const hbw = bw / 2, hbt = bt / 2, hsw = sw / 2
-      // T字（上バーが水平、縦柱が中央下方向）。全高は bt/2 + sh まで下
-      // 上バー外周 → 右上→右下→柱右→柱下→柱左→左下→左上
-      const topY = hbt // モデルの上端（中心より上）
-      const barBottomY = -hbt
-      const stemBottomY = - (hbt + sh)
-      return [
-        { x: -hbw, y: topY },
-        { x: hbw, y: topY },
-        { x: hbw, y: barBottomY },
-        { x: hsw, y: barBottomY },
-        { x: hsw, y: stemBottomY },
-        { x: -hsw, y: stemBottomY },
-        { x: -hsw, y: barBottomY },
-        { x: -hbw, y: barBottomY },
-      ]
+      return outlineT(INITIAL_T)
     }
   }
 }
@@ -108,17 +61,69 @@ export function bboxOf(kind: TemplateKind): RectTemplate {
     }
   }
 }
-=======
-export type RectTemplate = {
-  widthMm: number
-  heightMm: number
-  // 原点基準の中心配置とするため、配置座標は (0,0) を原則とする
+
+// 日本語コメント: パラメータ指定で長方形の外形を返す（編集用）
+export function outlineRect(rect: RectTemplate): Vec2[] {
+  const { widthMm: W, heightMm: H } = rect
+  const hw = W / 2, hh = H / 2
+  return [
+    { x: -hw, y: hh },
+    { x: hw, y: hh },
+    { x: hw, y: -hh },
+    { x: -hw, y: -hh },
+  ]
 }
 
-// 日本語コメント: 初期テンプレート（例: 8000mm x 6000mm）
-export const INITIAL_RECT: RectTemplate = {
-  widthMm: 8000,
-  heightMm: 6000,
+// 日本語コメント: パラメータ指定の L 字外形
+export function outlineL(p: LTemplate): Vec2[] {
+  const { widthMm: W, heightMm: H, cutWidthMm: cw, cutHeightMm: ch } = p
+  const hw = W / 2, hh = H / 2
+  return [
+    { x: -hw, y: hh },
+    { x: hw - cw, y: hh },
+    { x: hw - cw, y: hh - ch },
+    { x: hw, y: hh - ch },
+    { x: hw, y: -hh },
+    { x: -hw, y: -hh },
+  ]
 }
 
->>>>>>> origin/main
+// 日本語コメント: パラメータ指定の U 字外形
+export function outlineU(p: UTemplate): Vec2[] {
+  const { widthMm: W, heightMm: H, innerWidthMm: iw, depthMm: d } = p
+  const hw = W / 2, hh = H / 2
+  return [
+    { x: -hw, y: hh },
+    { x: -iw / 2, y: hh },
+    { x: -iw / 2, y: hh - d },
+    { x: iw / 2, y: hh - d },
+    { x: iw / 2, y: hh },
+    { x: hw, y: hh },
+    { x: hw, y: -hh },
+    { x: -hw, y: -hh },
+  ]
+}
+
+// 日本語コメント: パラメータ指定の T 字外形
+export function outlineT(p: TTemplate): Vec2[] {
+  const { barWidthMm: bw, barThickMm: bt, stemWidthMm: sw, stemHeightMm: sh } = p
+  const hbw = bw / 2, hbt = bt / 2, hsw = sw / 2
+  const topY = hbt
+  const barBottomY = -hbt
+  const stemBottomY = - (hbt + sh)
+  return [
+    { x: -hbw, y: topY },
+    { x: hbw, y: topY },
+    { x: hbw, y: barBottomY },
+    { x: hsw, y: barBottomY },
+    { x: hsw, y: stemBottomY },
+    { x: -hsw, y: stemBottomY },
+    { x: -hsw, y: barBottomY },
+    { x: -hbw, y: barBottomY },
+  ]
+}
+
+// 日本語コメント: 現在パラメータのバウンディングボックス寸法（東西×南北）
+export function bboxOfL(p: LTemplate): RectTemplate { return { widthMm: p.widthMm, heightMm: p.heightMm } }
+export function bboxOfU(p: UTemplate): RectTemplate { return { widthMm: p.widthMm, heightMm: p.heightMm } }
+export function bboxOfT(p: TTemplate): RectTemplate { return { widthMm: p.barWidthMm, heightMm: p.barThickMm + p.stemHeightMm } }
