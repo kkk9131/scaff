@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { SnapOptions } from '@/core/snap'
 
 export type ViewMode = 'plan' | 'elev' | '3d'
@@ -34,7 +35,7 @@ export const Sidebar: React.FC<{
           title="ビューの開閉"
         >
           <span>ビュー</span>
-          <span>{openView ? '🔽' : '▶'}</span>
+          {openView ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
         {openView && (
           <div className="space-y-2">
@@ -52,7 +53,7 @@ export const Sidebar: React.FC<{
           title="テンプレートの開閉"
         >
           <span>テンプレート</span>
-          <span>{openTemplate ? '🔽' : '▶'}</span>
+          {openTemplate ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
         {openTemplate && (
           <div className="grid grid-cols-2 gap-2">
@@ -72,7 +73,7 @@ export const Sidebar: React.FC<{
           title="スナップの開閉"
         >
           <span>スナップ</span>
-          <span>{openSnap ? '🔽' : '▶'}</span>
+          {openSnap ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
         {openSnap && (
           <div className="space-y-2 text-sm">
