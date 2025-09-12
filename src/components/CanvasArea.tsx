@@ -164,7 +164,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       // 日本語コメント: 頂点ハンドルを描画（小さな白丸）
       ctx.fillStyle = '#ffffff'
       const r = 3
-      for (const p of poly) {
+      for (const p of polyMm) {
         const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
         ctx.beginPath()
         ctx.arc(s.x, s.y, r, 0, Math.PI * 2)
