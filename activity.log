@@ -57,3 +57,7 @@
 2025-09-12: 直開き対応インライン版デモ追加
 - `assets/demo-dimensions/index-ui-inline.html` を追加（ESM不要、file直開きでも動作）
 - READMEにローカルHTTPサーバ手順とインライン版の案内を追記
+
+2025-09-13 00:25: activity.log の運用ルールを AGENTS に追記
+- `AGENTS.md` と `AGENTS.ja.md` に activity.log の統一書式（append-only/JST/箇条書き/秘密情報禁止）を追加
+- 以後は追記のみ。既存行の削除・書換・並べ替えを禁止

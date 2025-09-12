@@ -57,6 +57,24 @@
 - Summarize performed actions per session or PR with date/time and short bullets.
   - Example: `2025-09-11: 初期コミット、AGENTS追加、リモート設定`.
 
+### activity.log format rules (unified)
+- Append-only: never delete, rewrite, or reorder existing lines.
+- Language: Japanese only; keep entries concise (1–5 bullets).
+- Date header: start each session with `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` (JST).
+- Bullets: use `- ` for sub-items under the date line.
+- Scope: log meaningful repository-level actions (spec/docs/code/tests/config/CI). Avoid trivial edits.
+- References: optionally include PR numbers `(#123)` or short commit hashes.
+- Conflicts: when merging branches, combine logs preserving chronological order; do not drop lines.
+- Secrets: never include secrets, tokens, or personally identifiable information.
+
+Example
+```
+2025-09-13 10:05: フェーズ2「寸法線の常時表示」UIデモを追加
+- SVGレンダラを追加（src/ui/svg/dimension-renderer.js）
+- デモページを追加（assets/demo-dimensions/index-ui.html）
+- READMEに使用方法を追記
+```
+
 ## Development Flow Compliance
 - Follow the development process defined in `docs/Development-Flow.md`.
 - Issues/PRs must satisfy Ready/Done definitions and use the checklist.
