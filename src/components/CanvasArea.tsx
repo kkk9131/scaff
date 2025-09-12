@@ -4,10 +4,14 @@ import { DEFAULT_PX_PER_MM } from '@/core/units'
 import { bboxOf, outlineOf, TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_T, outlineL, outlineU, outlineT, bboxOfL, bboxOfU, bboxOfT } from '@/core/model'
 import { lengthToScreen, modelToScreen, screenToModel } from '@/core/transform'
 import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
+// 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
+import { DimensionEngine } from '@/core/dimensions/dimension_engine'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
 export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions }> = ({ template = 'rect', snapOptions }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const dimEngineRef = useRef(new DimensionEngine())
   const [rectMm, setRectMm] = useState(INITIAL_RECT)
   const [lMm, setLMm] = useState(INITIAL_L)
   const [uMm, setUMm] = useState(INITIAL_U)
@@ -75,19 +79,66 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           ctx.stroke()
         }
       }
-      // 日本語コメント: モデル生成（外形ポリゴン）
-      const poly = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
-      // 描画
+      // 日本語コメント: モデル生成（外形ポリゴン, mm）
+      const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
+      // 画面座標へ変換してCanvasに描画
       ctx.strokeStyle = '#35a2ff'
       ctx.lineWidth = 2
       ctx.beginPath()
-      poly.forEach((p, i) => {
-        const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+      const polyScreen = polyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
+      polyScreen.forEach((s, i) => {
         if (i === 0) ctx.moveTo(s.x, s.y)
         else ctx.lineTo(s.x, s.y)
       })
       ctx.closePath()
       ctx.stroke()
+
+      // 日本語コメント: 寸法線オーバーレイ（SVG）を更新
+      const svg = svgRef.current
+      if (svg) {
+        // サイズとviewBoxをCanvasと一致させる
+        svg.setAttribute('width', String(cssBounds.width))
+        svg.setAttribute('height', String(cssBounds.height))
+        svg.setAttribute('viewBox', `0 0 ${cssBounds.width} ${cssBounds.height}`)
+        // クリア
+        while (svg.firstChild) svg.removeChild(svg.firstChild)
+        // 寸法線を計算（外側=自動: CW/CCWで決定）
+        const dims = dimEngineRef.current.computeForPolygon(polyScreen, { offset: 16, decimals: 1 })
+        const NS = 'http://www.w3.org/2000/svg'
+        // 辺の可視化（控えめな青）
+        for (let i = 0; i < polyScreen.length; i++) {
+          const a = polyScreen[i]
+          const b = polyScreen[(i + 1) % polyScreen.length]
+          const le = document.createElementNS(NS, 'line')
+          le.setAttribute('x1', String(a.x))
+          le.setAttribute('y1', String(a.y))
+          le.setAttribute('x2', String(b.x))
+          le.setAttribute('y2', String(b.y))
+          le.setAttribute('stroke', '#0b3b66')
+          le.setAttribute('stroke-width', '1')
+          svg.appendChild(le)
+        }
+        // 寸法線とラベル
+        for (const d of dims) {
+          const dl = document.createElementNS(NS, 'line')
+          dl.setAttribute('x1', String(d.start.x))
+          dl.setAttribute('y1', String(d.start.y))
+          dl.setAttribute('x2', String(d.end.x))
+          dl.setAttribute('y2', String(d.end.y))
+          dl.setAttribute('stroke', '#0d6efd')
+          dl.setAttribute('stroke-width', '1.5')
+          dl.setAttribute('fill', 'none')
+          svg.appendChild(dl)
+
+          const tx = document.createElementNS(NS, 'text')
+          tx.setAttribute('x', String(d.textAnchor.x))
+          tx.setAttribute('y', String(d.textAnchor.y - 4))
+          tx.setAttribute('fill', '#0d6efd')
+          tx.setAttribute('font-size', '12')
+          tx.textContent = `${d.value.toFixed(1)} ${d.units ?? 'px'}`
+          svg.appendChild(tx)
+        }
+      }
 
       // 日本語コメント: 原点と軸の簡易ガイド（座標系の可視化）
       ctx.strokeStyle = 'rgba(255,255,255,0.15)'
@@ -453,7 +504,12 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
     }
   }, [])
 
-  return <canvas ref={ref} className="w-full h-full bg-[#0f1113]" />
+  return (
+    <div className="w-full h-full relative">
+      <canvas ref={ref} className="w-full h-full bg-[#0f1113]" />
+      <svg ref={svgRef} className="absolute inset-0 pointer-events-none" />
+    </div>
+  )
 }
 
 export default CanvasArea

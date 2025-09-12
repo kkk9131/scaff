@@ -74,3 +74,7 @@
 2025-09-13 01:05: ラベル衝突回避を追加
 - UI: `src/ui/svg/dimension-renderer.js` に簡易衝突回避を実装（BBox交差検出→外側法線方向へ段階オフセット）
 - README/設計ドキュメントを更新
+
+2025-09-13 01:25: CanvasArea に寸法オーバーレイを統合
+- `src/components/CanvasArea.tsx` に SVG オーバーレイを追加（絶対配置）
+- コア `DimensionEngine` を用いて多角形のCW/CCWから外側を自動判定し、寸法線＋ラベルを描画
