@@ -12,6 +12,14 @@ export default function Page() {
   const [expanded, setExpanded] = useState(true)
   const [view, setView] = useState<ViewMode>('plan')
   const [template, setTemplate] = useState<TemplateKind>('rect')
+  const [dimensions, setDimensions] = useState({
+    show: true as boolean,
+    outsideMode: 'auto' as 'auto' | 'left' | 'right',
+    offset: 16 as number,
+    offsetUnit: 'px' as 'px' | 'mm',
+    decimals: 0 as number,
+    avoidCollision: true as boolean,
+  })
   const [snap, setSnap] = useState({
     enableGrid: SNAP_DEFAULTS.enableGrid,
     gridMm: SNAP_DEFAULTS.gridMm,
@@ -42,18 +50,26 @@ export default function Page() {
     <div className="h-dvh flex flex-col">
       <TopBar onSave={onSave} onLoad={onLoad} />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          expanded={expanded}
-          current={view}
-          onSelectView={setView}
-          onToggle={() => setExpanded(v => !v)}
-          onSelectTemplate={setTemplate}
-          currentTemplate={template}
-          snap={snap}
-          onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
-        />
+          <Sidebar
+            expanded={expanded}
+            current={view}
+            onSelectView={setView}
+            onToggle={() => setExpanded(v => !v)}
+            onSelectTemplate={setTemplate}
+            currentTemplate={template}
+            snap={snap}
+            onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
+            dimensions={dimensions}
+            onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
+          />
         <main className="flex-1">
-          {view === '3d' ? <ThreePlaceholder /> : <CanvasArea template={template} snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }} />}
+          {view === '3d' ? <ThreePlaceholder /> : (
+            <CanvasArea
+              template={template}
+              snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }}
+              dimensionOptions={dimensions}
+            />
+          )}
         </main>
       </div>
     </div>

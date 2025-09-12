@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>寸法線デモ（各辺外側・常時表示）</title>
+    <style>
+      /* 簡易スタイル */
+      html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+      .toolbar { padding: 8px 12px; border-bottom: 1px solid #e5e5e5; }
+      .wrap { height: calc(100% - 42px); display: grid; place-items: center; background: #fafafa; }
+      svg { background: white; border: 1px solid #ddd; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+      .edge { stroke: #111; stroke-width: 2; }
+      .dim { stroke: #0d6efd; stroke-width: 1.5; fill: none; }
+      .label { fill: #0d6efd; font-size: 12px; user-select: none; }
+      .handle { fill: #ff6b6b; cursor: grab; }
+      .handle:active { cursor: grabbing; }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <strong>寸法線デモ</strong>
+      <span style="color:#666; margin-left: 8px;">頂点をドラッグすると寸法が更新されます</span>
+    </div>
+    <div class="wrap">
+      <svg id="stage" width="800" height="520" viewBox="0 0 800 520"></svg>
+    </div>
+    <script type="module">
+      // 日本語コメント: デモ用にESMとしてブラウザで直接実行
+      import { DimensionEngine } from '../../src/core/dimensions/dimension-engine.js';
+
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const stage = document.getElementById('stage');
+      const engine = new DimensionEngine();
+
+      // 初期図形: 矩形（4頂点）
+      const points = [
+        { x: 200, y: 160 },
+        { x: 500, y: 160 },
+        { x: 500, y: 360 },
+        { x: 200, y: 360 },
+      ];
+
+      function edgesFromPoints(pts) {
+        const result = [];
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i];
+          const b = pts[(i + 1) % pts.length];
+          result.push({ a, b, id: `e${i}` });
+        }
+        return result;
+      }
+
+      function clearSVG() {
+        while (stage.firstChild) stage.removeChild(stage.firstChild);
+      }
+
+      function line(x1, y1, x2, y2, cls) {
+        const el = document.createElementNS(svgNS, 'line');
+        el.setAttribute('x1', x1);
+        el.setAttribute('y1', y1);
+        el.setAttribute('x2', x2);
+        el.setAttribute('y2', y2);
+        if (cls) el.setAttribute('class', cls);
+        return el;
+      }
+
+      function circle(cx, cy, r, cls) {
+        const el = document.createElementNS(svgNS, 'circle');
+        el.setAttribute('cx', cx);
+        el.setAttribute('cy', cy);
+        el.setAttribute('r', r);
+        if (cls) el.setAttribute('class', cls);
+        return el;
+      }
+
+      function text(x, y, content, cls) {
+        const el = document.createElementNS(svgNS, 'text');
+        el.setAttribute('x', x);
+        el.setAttribute('y', y);
+        if (cls) el.setAttribute('class', cls);
+        el.textContent = content;
+        return el;
+      }
+
+      function render() {
+        clearSVG();
+        // 図形の辺
+        const edges = edgesFromPoints(points);
+        for (const e of edges) {
+          stage.appendChild(line(e.a.x, e.a.y, e.b.x, e.b.y, 'edge'));
+        }
+
+        // 寸法線（外側=左法線、オフセット=16）
+        const dims = engine.computeForEdges(edges, { offset: 16, decimals: 1 });
+        for (const d of dims) {
+          stage.appendChild(line(d.start.x, d.start.y, d.end.x, d.end.y, 'dim'));
+          const label = `${d.value.toFixed(1)} ${d.units ?? 'px'}`;
+          stage.appendChild(text(d.textAnchor.x, d.textAnchor.y - 4, label, 'label'));
+        }
+
+        // ドラッグ用ハンドル
+        points.forEach((p, idx) => {
+          const h = circle(p.x, p.y, 6, 'handle');
+          h.dataset.idx = String(idx);
+          stage.appendChild(h);
+        });
+      }
+
+      // ドラッグ操作（簡易実装）
+      let dragging = null; // { idx }
+      stage.addEventListener('pointerdown', (e) => {
+        const target = e.target;
+        if (target && target.classList.contains('handle')) {
+          dragging = { idx: Number(target.dataset.idx) };
+          target.setPointerCapture(e.pointerId);
+        }
+      });
+      stage.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const idx = dragging.idx;
+        const pt = stage.createSVGPoint();
+        pt.x = e.clientX; pt.y = e.clientY;
+        const ctm = stage.getScreenCTM();
+        if (!ctm) return;
+        const inv = ctm.inverse();
+        const loc = pt.matrixTransform(inv);
+        // 頂点更新（日本語コメント: ドラッグで頂点を直接移動）
+        points[idx].x = loc.x;
+        points[idx].y = loc.y;
+        render();
+      });
+      stage.addEventListener('pointerup', () => { dragging = null; });
+      stage.addEventListener('pointercancel', () => { dragging = null; });
+
+      render();
+    </script>
+  </body>
+  </html>
+

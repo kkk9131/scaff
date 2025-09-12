@@ -4,10 +4,16 @@ import { DEFAULT_PX_PER_MM } from '@/core/units'
 import { bboxOf, outlineOf, TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_T, outlineL, outlineU, outlineT, bboxOfL, bboxOfU, bboxOfT } from '@/core/model'
 import { lengthToScreen, modelToScreen, screenToModel } from '@/core/transform'
 import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
+// 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
+import { DimensionEngine } from '@/core/dimensions/dimension_engine'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions }> = ({ template = 'rect', snapOptions }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean } }> = ({ template = 'rect', snapOptions, dimensionOptions }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const dimEngineRef = useRef(new DimensionEngine())
+  // 寸法設定は描画クロージャから参照するためRefに保持
+  const dimOptsRef = useRef(dimensionOptions)
   const [rectMm, setRectMm] = useState(INITIAL_RECT)
   const [lMm, setLMm] = useState(INITIAL_L)
   const [uMm, setUMm] = useState(INITIAL_U)
@@ -25,6 +31,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
   useEffect(() => { uRef.current = uMm }, [uMm])
   useEffect(() => { tRef.current = tMm }, [tMm])
   useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
+  useEffect(() => { dimOptsRef.current = dimensionOptions; drawRef.current?.() }, [dimensionOptions])
 
   useEffect(() => {
     const canvas = ref.current!
@@ -75,19 +82,188 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           ctx.stroke()
         }
       }
-      // 日本語コメント: モデル生成（外形ポリゴン）
-      const poly = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
-      // 描画
+      // 日本語コメント: モデル生成（外形ポリゴン, mm）
+      const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
+      // 画面座標へ変換してCanvasに描画
       ctx.strokeStyle = '#35a2ff'
       ctx.lineWidth = 2
       ctx.beginPath()
-      poly.forEach((p, i) => {
-        const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+      const polyScreen = polyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
+      polyScreen.forEach((s, i) => {
         if (i === 0) ctx.moveTo(s.x, s.y)
         else ctx.lineTo(s.x, s.y)
       })
       ctx.closePath()
       ctx.stroke()
+
+      // 日本語コメント: 寸法線オーバーレイ（SVG）を更新
+      const svg = svgRef.current
+      const opts = dimOptsRef.current
+      const showDims = opts?.show ?? true
+      if (svg && showDims) {
+        // サイズとviewBoxをCanvasと一致させる
+        svg.setAttribute('width', String(cssBounds.width))
+        svg.setAttribute('height', String(cssBounds.height))
+        svg.setAttribute('viewBox', `0 0 ${cssBounds.width} ${cssBounds.height}`)
+        // クリア
+        while (svg.firstChild) svg.removeChild(svg.firstChild)
+        // 寸法線を計算（外側=自動/手動）
+        const offsetRaw = opts?.offset ?? 16
+        const offsetPx = (opts?.offsetUnit === 'mm') ? offsetRaw * pxPerMm : offsetRaw
+        const decimals = opts?.decimals ?? 0
+        const mode = opts?.outsideMode ?? 'auto'
+        let dims
+        if (mode === 'auto') {
+          dims = dimEngineRef.current.computeForPolygon(polyScreen, { offset: offsetPx, decimals })
+        } else {
+          const edges = polyScreen.map((p, i) => ({ a: p, b: polyScreen[(i + 1) % polyScreen.length], id: `e${i}` }))
+          dims = dimEngineRef.current.computeForEdges(edges, { offset: offsetPx, decimals, outsideIsLeftNormal: mode === 'left' })
+        }
+        // ラベル値は内部モデル(mm)に基づいて表示（単位=mm）
+        const mmLengths: number[] = []
+        for (let i = 0; i < polyMm.length; i++) {
+          const a = polyMm[i]
+          const b = polyMm[(i + 1) % polyMm.length]
+          mmLengths.push(Math.hypot(b.x - a.x, b.y - a.y))
+        }
+        const NS = 'http://www.w3.org/2000/svg'
+        // 辺の可視化（控えめな青）
+        for (let i = 0; i < polyScreen.length; i++) {
+          const a = polyScreen[i]
+          const b = polyScreen[(i + 1) % polyScreen.length]
+          const le = document.createElementNS(NS, 'line')
+          le.setAttribute('x1', String(a.x))
+          le.setAttribute('y1', String(a.y))
+          le.setAttribute('x2', String(b.x))
+          le.setAttribute('y2', String(b.y))
+          le.setAttribute('stroke', '#0b3b66')
+          le.setAttribute('stroke-width', '1')
+          svg.appendChild(le)
+        }
+        // 寸法線
+        for (const d of dims) {
+          const dl = document.createElementNS(NS, 'line')
+          dl.setAttribute('x1', String(d.start.x))
+          dl.setAttribute('y1', String(d.start.y))
+          dl.setAttribute('x2', String(d.end.x))
+          dl.setAttribute('y2', String(d.end.y))
+          dl.setAttribute('stroke', '#0d6efd')
+          dl.setAttribute('stroke-width', '1.5')
+          dl.setAttribute('fill', 'none')
+          svg.appendChild(dl)
+        }
+
+        // ラベル（衝突回避に対応）
+        const labels: { el: SVGTextElement; dim: typeof dims[number]; baseX: number; baseY: number }[] = []
+        for (const d of dims) {
+          const tx = document.createElementNS(NS, 'text') as SVGTextElement
+          const baseX = d.textAnchor.x
+          const baseY = d.textAnchor.y - 4
+          tx.setAttribute('x', String(baseX))
+          tx.setAttribute('y', String(baseY))
+          tx.setAttribute('fill', '#0d6efd')
+          tx.setAttribute('font-size', '12')
+          const edgeIdx = Number(d.edgeId?.replace('e', '')) || 0
+          const mmVal = mmLengths[edgeIdx] ?? 0
+          tx.textContent = `${mmVal.toFixed(decimals)} mm`
+          svg.appendChild(tx)
+          labels.push({ el: tx, dim: d, baseX, baseY })
+        }
+        if (opts?.avoidCollision) {
+          // 先行配置や辺/寸法線と重なる場合は外側法線方向へ段階的に押し出す
+          const step = 10, maxIter = 10
+          const buffer = 4 // 線との交差判定の許容量
+
+          const rectExpand = (bb: DOMRect, pad: number) => ({ x: bb.x - pad, y: bb.y - pad, width: bb.width + 2*pad, height: bb.height + 2*pad })
+          const ptInRect = (x: number, y: number, r: {x:number;y:number;width:number;height:number}) => (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height)
+          const segOverlapsRect = (x1:number,y1:number,x2:number,y2:number, r:{x:number;y:number;width:number;height:number}, pad:number) => {
+            // サンプリングで近似（十分に軽量）
+            const rr = { x: r.x - pad, y: r.y - pad, width: r.width + 2*pad, height: r.height + 2*pad }
+            const n = 16
+            for (let i=0;i<=n;i++) {
+              const t = i / n
+              const x = x1 + (x2 - x1) * t
+              const y = y1 + (y2 - y1) * t
+              if (ptInRect(x, y, rr)) return true
+            }
+            return false
+          }
+
+          for (let i = 0; i < labels.length; i++) {
+            const li = labels[i]
+            // 外側法線: 寸法線の中点 - 元エッジ中点（i番目のエッジを対応付け）
+            const a = polyScreen[i]
+            const b = polyScreen[(i + 1) % polyScreen.length]
+            const edgeMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+            const dimMid = { x: (li.dim.start.x + li.dim.end.x) / 2, y: (li.dim.start.y + li.dim.end.y) / 2 }
+            let nx = dimMid.x - edgeMid.x, ny = dimMid.y - edgeMid.y
+            const nlen = Math.hypot(nx, ny) || 1; nx /= nlen; ny /= nlen
+            let moved = 0
+            for (let iter = 0; iter < maxIter; iter++) {
+              const bboxI = li.el.getBBox()
+              let overlap = false
+              for (let j = 0; j < i; j++) {
+                const bboxJ = labels[j].el.getBBox()
+                if (!(bboxI.x + bboxI.width < bboxJ.x || bboxJ.x + bboxJ.width < bboxI.x || bboxI.y + bboxI.height < bboxJ.y || bboxJ.y + bboxJ.height < bboxI.y)) {
+                  overlap = true; break
+                }
+              }
+              // 辺（ポリゴン）との交差
+              if (!overlap) {
+                const rb = rectExpand(bboxI, 0)
+                for (let k=0;k<polyScreen.length;k++) {
+                  const p1 = polyScreen[k]
+                  const p2 = polyScreen[(k+1)%polyScreen.length]
+                  if (segOverlapsRect(p1.x, p1.y, p2.x, p2.y, rb, buffer)) { overlap = true; break }
+                }
+              }
+              // 寸法線との交差
+              if (!overlap) {
+                const rb = rectExpand(bboxI, 0)
+                for (const d of dims) {
+                  if (segOverlapsRect(d.start.x, d.start.y, d.end.x, d.end.y, rb, buffer)) { overlap = true; break }
+                }
+              }
+              if (!overlap) break
+              moved += step
+              const x = li.dim.textAnchor.x + nx * moved
+              const y = li.dim.textAnchor.y - 4 + ny * moved
+              li.el.setAttribute('x', String(x))
+              li.el.setAttribute('y', String(y))
+            }
+          }
+        }
+
+        // リーダー線（ラベルが基準位置から一定以上ずれた場合に描画）
+        for (const li of labels) {
+          const curX = Number(li.el.getAttribute('x') || li.baseX)
+          const curY = Number(li.el.getAttribute('y') || li.baseY)
+          const dx = curX - li.baseX
+          const dy = curY - li.baseY
+          if (Math.hypot(dx, dy) > 6) {
+            // 寸法線への最近点を求め、そこからラベルへ細い線を引く
+            const x1 = li.dim.start.x, y1 = li.dim.start.y
+            const x2 = li.dim.end.x, y2 = li.dim.end.y
+            const vx = x2 - x1, vy = y2 - y1
+            const wx = curX - x1, wy = curY - y1
+            const c2 = vx*vx + vy*vy
+            const t = c2 === 0 ? 0 : Math.max(0, Math.min(1, (vx*wx + vy*wy) / c2))
+            const px = x1 + vx * t
+            const py = y1 + vy * t
+            const leader = document.createElementNS(NS, 'line')
+            leader.setAttribute('x1', String(px))
+            leader.setAttribute('y1', String(py))
+            leader.setAttribute('x2', String(curX))
+            leader.setAttribute('y2', String(curY))
+            leader.setAttribute('stroke', '#0d6efd')
+            leader.setAttribute('stroke-width', '1')
+            leader.setAttribute('stroke-dasharray', '3 2')
+            svg.appendChild(leader)
+          }
+        }
+      } else if (svg && !showDims) {
+        while (svg.firstChild) svg.removeChild(svg.firstChild)
+      }
 
       // 日本語コメント: 原点と軸の簡易ガイド（座標系の可視化）
       ctx.strokeStyle = 'rgba(255,255,255,0.15)'
@@ -113,7 +289,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       // 日本語コメント: 頂点ハンドルを描画（小さな白丸）
       ctx.fillStyle = '#ffffff'
       const r = 3
-      for (const p of poly) {
+      for (const p of polyMm) {
         const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
         ctx.beginPath()
         ctx.arc(s.x, s.y, r, 0, Math.PI * 2)
@@ -453,7 +629,12 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
     }
   }, [])
 
-  return <canvas ref={ref} className="w-full h-full bg-[#0f1113]" />
+  return (
+    <div className="w-full h-full relative">
+      <canvas ref={ref} className="w-full h-full bg-[#0f1113]" />
+      <svg ref={svgRef} className="absolute inset-0 pointer-events-none" />
+    </div>
+  )
 }
 
 export default CanvasArea

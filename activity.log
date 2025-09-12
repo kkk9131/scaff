@@ -36,3 +36,65 @@
 2025-09-12 UI: サイドバー各セクションの開閉アイコンを lucide-react の Chevron に変更（絵文字から置換）。デフォルトは閉。
 2025-09-12 ロードマップ更新: フェーズ2『スナップ機能（直角・グリッド吸着）』を完了に変更。
 2025-09-12 main 更新: origin/main を fast-forward で取り込み（スナップ機能・UI設定を反映）。
+
+2025-09-12: フェーズ2着手、ブランチ作成、スキャフォールド追加
+- 新規ブランチ `feat/phase2-dimensions-always-visible` を作成
+- 設計ドキュメント `docs/design/dimensions-always-visible.md` を追加
+- コア骨組み `src/core/dimensions/` （モデル/エンジン）を追加
+- テスト雛形 `tests/core/dimensions/dimension_engine.spec.ts` を追加
+- リポジトリ概要 `README.ja.md` を追加
+
+2025-09-12: デモ追加・JSエンジン用意
+- ブラウザ用JS版エンジン `src/core/dimensions/dimension-engine.js` を追加
+- ビルド不要のSVGデモ `assets/demo-dimensions/index.html` を追加
+- READMEにデモの使い方を追記
+
+2025-09-12: UI統合モジュール追加
+- SVGレンダラ `src/ui/svg/dimension-renderer.js` を追加
+- UI統合デモ `assets/demo-dimensions/index-ui.html` を追加
+- READMEにUI統合デモの説明を追記
+
+2025-09-12: 直開き対応インライン版デモ追加
+- `assets/demo-dimensions/index-ui-inline.html` を追加（ESM不要、file直開きでも動作）
+- READMEにローカルHTTPサーバ手順とインライン版の案内を追記
+
+2025-09-13 00:25: activity.log の運用ルールを AGENTS に追記
+- `AGENTS.md` と `AGENTS.ja.md` に activity.log の統一書式（append-only/JST/箇条書き/秘密情報禁止）を追加
+- 以後は追記のみ。既存行の削除・書換・並べ替えを禁止
+
+2025-09-13 00:40: 外側判定の厳密化を実装（CW/CCW自動）
+- コア: `computeForPolygon(points)` を追加し、shoelace 面積で CCW/CW を判定
+- ルール: CCW→右法線が外側、CW→左法線が外側（画面座標前提）
+- UI: `outsideMode`（auto/left/right）を追加し、デモにラジオボタンで切替を追加
+- ドキュメント: 設計/README を更新
+
+2025-09-13 00:55: インライン版デモの描画を堅牢化
+- CSSが効かない環境でも線が見えるよう、SVG要素に `stroke`/`stroke-width`/`fill` を直接指定
+
+2025-09-13 01:05: ラベル衝突回避を追加
+- UI: `src/ui/svg/dimension-renderer.js` に簡易衝突回避を実装（BBox交差検出→外側法線方向へ段階オフセット）
+- README/設計ドキュメントを更新
+
+2025-09-13 01:25: CanvasArea に寸法オーバーレイを統合
+- `src/components/CanvasArea.tsx` に SVG オーバーレイを追加（絶対配置）
+- コア `DimensionEngine` を用いて多角形のCW/CCWから外側を自動判定し、寸法線＋ラベルを描画
+
+2025-09-13 01:35: エディタの寸法表示を mm に変更
+- CanvasArea の寸法ラベルを内部モデルの長さ（mm）で表示（整数mm）
+
+2025-09-13 01:50: サイドバーに寸法設定を追加・CanvasArea対応
+- Sidebar に寸法パネル（表示ON/OFF、外側モード、自動/左/右、オフセット、小数桁）を追加
+- Page から CanvasArea へ設定をpropで連携
+- CanvasArea 側で outsideMode/offset/decimals と表示ON/OFFを反映
+
+2025-09-13 02:00: 寸法設定の反映不具合を修正
+- CanvasArea で寸法設定を useRef に保持し、変更時に再描画
+- これにより表示ON/OFF・外側モード・オフセット・小数桁が即時反映
+
+2025-09-13 02:15: オフセットのmm指定とズーム連動、ラベル衝突回避をエディタに導入
+- Sidebar: オフセット単位（px/mm）とラベル回避ON/OFFを追加
+- CanvasArea: px/mm変換（pxPerMm連動）を適用、ラベル衝突回避ロジックを移植
+
+2025-09-13 02:25: ロードマップ更新（寸法線の項目を完了）
+- docs/開発ロードマップ.md のフェーズ2「寸法線＋数値の常時表示（各辺外側）」を完了に変更
+- 外側判定（自動/手動）、mm表示、小数桁、オフセットpx/mm、衝突回避、リーダー線を記載
