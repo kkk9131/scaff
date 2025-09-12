@@ -34,7 +34,7 @@
   - 現状の単位は `px`、小数1桁の表示です。
 
 - UIモジュール統合版（推奨）: `assets/demo-dimensions/index-ui.html`
-  - `src/ui/svg/dimension-renderer.js` を利用した構成。オフセット・小数桁・外側判定をUIで変更可能。
+  - `src/ui/svg/dimension-renderer.js` を利用した構成。オフセット・小数桁・外側判定（自動/CW/CCWに応じた外向き、または手動 左/右）をUIで変更可能。
   - 将来的にエディタへ統合する際のベースとなるAPIです。
 
 注意（ファイル直開きでボタンが反応しない場合）

@@ -5,10 +5,10 @@ import { DimensionEngine } from '../../core/dimensions/dimension-engine.js';
 
 export class DimensionRenderer {
   // svgEl: <svg> 要素
-  // options: { showHandles?: boolean, offset?: number, decimals?: number, outsideIsLeftNormal?: boolean }
+  // options: { showHandles?: boolean, offset?: number, decimals?: number, outsideIsLeftNormal?: boolean, outsideMode?: 'auto' | 'left' | 'right' }
   constructor(svgEl, options = {}) {
     this.svg = svgEl;
-    this.options = { showHandles: true, offset: 16, decimals: 1, outsideIsLeftNormal: true, ...options };
+    this.options = { showHandles: true, offset: 16, decimals: 1, outsideIsLeftNormal: true, outsideMode: 'auto', ...options };
     this.engine = new DimensionEngine();
     this.points = []; // [{x,y}]
     this._drag = null; // { idx, pointerId }
@@ -44,16 +44,24 @@ export class DimensionRenderer {
   render() {
     this.clear();
     const edges = this.getEdges();
-
     // 図形の辺
     edges.forEach(e => this.svg.appendChild(this._line(e.a.x, e.a.y, e.b.x, e.b.y, 'edge')));
 
-    // 寸法線
-    const dims = this.engine.computeForEdges(edges, {
-      offset: this.options.offset,
-      decimals: this.options.decimals,
-      outsideIsLeftNormal: this.options.outsideIsLeftNormal,
-    });
+    // 寸法線（外側: 自動/手動）
+    let dims;
+    if (this.options.outsideMode === 'auto') {
+      dims = this.engine.computeForPolygon(this.points, {
+        offset: this.options.offset,
+        decimals: this.options.decimals,
+      });
+    } else {
+      const left = this.options.outsideMode === 'left' ? true : false;
+      dims = this.engine.computeForEdges(edges, {
+        offset: this.options.offset,
+        decimals: this.options.decimals,
+        outsideIsLeftNormal: left,
+      });
+    }
     for (const d of dims) {
       this.svg.appendChild(this._line(d.start.x, d.start.y, d.end.x, d.end.y, 'dim'));
       const label = `${d.value.toFixed(this.options.decimals)} ${d.units ?? 'px'}`;
@@ -125,4 +133,3 @@ export class DimensionRenderer {
     this.svg.addEventListener('pointercancel', () => { this._drag = null; });
   }
 }
-

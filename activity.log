@@ -61,3 +61,9 @@
 2025-09-13 00:25: activity.log の運用ルールを AGENTS に追記
 - `AGENTS.md` と `AGENTS.ja.md` に activity.log の統一書式（append-only/JST/箇条書き/秘密情報禁止）を追加
 - 以後は追記のみ。既存行の削除・書換・並べ替えを禁止
+
+2025-09-13 00:40: 外側判定の厳密化を実装（CW/CCW自動）
+- コア: `computeForPolygon(points)` を追加し、shoelace 面積で CCW/CW を判定
+- ルール: CCW→右法線が外側、CW→左法線が外側（画面座標前提）
+- UI: `outsideMode`（auto/left/right）を追加し、デモにラジオボタンで切替を追加
+- ドキュメント: 設計/README を更新

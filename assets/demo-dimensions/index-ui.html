@@ -22,7 +22,13 @@
       <strong>寸法線デモ（UI統合）</strong>
       <label>オフセット: <input id="offset" type="range" min="0" max="60" value="16" /></label>
       <label>小数桁: <input id="dec" type="number" min="0" max="3" step="1" value="1" style="width:4em;" /></label>
-      <label><input id="leftNormal" type="checkbox" checked /> 外側=左法線</label>
+      <fieldset style="border:none; display:inline-flex; gap:8px; align-items:center;">
+        <legend style="display:none;">外側モード</legend>
+        <span>外側:</span>
+        <label><input type="radio" name="outside" value="auto" checked /> 自動</label>
+        <label><input type="radio" name="outside" value="left" /> 左法線</label>
+        <label><input type="radio" name="outside" value="right" /> 右法線</label>
+      </fieldset>
     </div>
     <div class="wrap">
       <svg id="stage" width="800" height="520" viewBox="0 0 800 520"></svg>
@@ -43,12 +49,20 @@
       // コントロール連携
       const offset = document.getElementById('offset');
       const dec = document.getElementById('dec');
-      const leftNormal = document.getElementById('leftNormal');
+      const outsideRadios = Array.from(document.querySelectorAll('input[name="outside"]'));
 
       offset.addEventListener('input', () => renderer.setOptions({ offset: Number(offset.value) }));
       dec.addEventListener('input', () => renderer.setOptions({ decimals: Number(dec.value) }));
-      leftNormal.addEventListener('change', () => renderer.setOptions({ outsideIsLeftNormal: leftNormal.checked }));
+      outsideRadios.forEach(r => r.addEventListener('change', () => {
+        const val = document.querySelector('input[name="outside"]:checked').value;
+        if (val === 'auto') {
+          renderer.setOptions({ outsideMode: 'auto' });
+        } else if (val === 'left') {
+          renderer.setOptions({ outsideMode: 'left' });
+        } else {
+          renderer.setOptions({ outsideMode: 'right' });
+        }
+      }));
     </script>
   </body>
   </html>
-

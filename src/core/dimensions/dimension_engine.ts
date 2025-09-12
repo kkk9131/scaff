@@ -86,5 +86,31 @@ export class DimensionEngine {
       return dim;
     });
   }
+
+  // 日本語コメント: 多角形の頂点配列から辺を生成し、向き（CW/CCW）に基づいて外側を自動決定
+  // 画面座標（SVG/Canvas: y増加=下）を前提に署名付き面積を算出
+  computeForPolygon(points: Point[], opts: Omit<DimensionEngineOptions, 'outsideIsLeftNormal'> = {}): DimensionLine[] {
+    const edges: Edge[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      edges.push({ a, b, id: `e${i}` });
+    }
+    const orientation = signedArea(points);
+    // 署名付き面積 > 0 を CCW とみなし、外側=右法線、< 0 を CW とみなし、外側=左法線
+    const outsideIsLeftNormal = orientation < 0; // CW => left が外側 / CCW => right が外側
+    return this.computeForEdges(edges, { ...opts, outsideIsLeftNormal });
+  }
 }
 
+// 日本語コメント: 多角形の署名付き面積（画面座標系）
+// 結果 >0: CCW, <0: CW, =0: 退化
+export function signedArea(points: Point[]): number {
+  let a = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const q = points[(i + 1) % points.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a / 2;
+}

@@ -12,11 +12,13 @@
  - 出力: 寸法線（始点・終点・テキストアンカー・値・オフセット・向き）
  - UI レイヤではこの出力をキャンバス（例: Canvas/SVG/WebGL）に描画
  
- ## 幾何・配置の基本 / Geometry & Placement
- - 辺ベクトル v = (b - a)
- - 法線 n は v を 90°回転したもの（左法線）。外側基準は以下のいずれかで決定:
-   - 多角形の頂点順（時計回り/反時計回り）情報があれば、外側=外向き法線
-   - 情報がなければデフォルトで左法線を外側とみなし、必要に応じてオプションで反転
+## 幾何・配置の基本 / Geometry & Placement
+- 辺ベクトル v = (b - a)
+- 法線 n は v を 90°回転したもの（左法線）。外側基準は以下のいずれかで決定:
+  - 多角形の頂点順（CW/CCW）から自動判定（画面座標系の署名付き面積）
+    - shoelace で面積>0 を CCW、<0 を CW とみなす（SVGのy軸下向きを前提）
+    - CCW の場合は外側=右法線、CW の場合は外側=左法線
+  - 手動指定も可（左/右法線を明示）。UI から切替可能
  - 寸法線は辺と平行で、位置は a と b を n 方向へ一定オフセット移動
  - テキストアンカーは寸法線の中点 + 追加の微小オフセット
  
@@ -24,10 +26,10 @@
  - 既定単位: `px`（今後 mm/cm へ拡張可能）
  - 小数桁: 0〜2 桁をオプション化（既定: 1）
  
- ## インターフェース / Interface
- - コア: `src/core/dimensions/`
-   - `dimension_model.ts`: モデル定義（Point, Edge, DimensionLine）
-   - `dimension_engine.ts`: 配列の Edge から寸法線を生成
+## インターフェース / Interface
+- コア: `src/core/dimensions/`
+  - `dimension_model.ts`: モデル定義（Point, Edge, DimensionLine）
+  - `dimension_engine.ts`: 配列の Edge から寸法線を生成、または `computeForPolygon(points)` で向き自動判定
  - テスト: `tests/core/dimensions/dimension_engine.spec.ts`（雛形）
  
  ## 次ステップ / Next Steps
@@ -45,4 +47,3 @@
  - Outside side: derived from polygon winding or default to left normal, with an option to flip
  
  See code scaffolds under `src/core/dimensions/`.
-

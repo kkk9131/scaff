@@ -41,5 +41,28 @@ export class DimensionEngine {
       };
     });
   }
+
+  // 日本語: 多角形の頂点から向き（CW/CCW）を判定し、外側を自動決定
+  computeForPolygon(points, opts = {}) {
+    const edges = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      edges.push({ a, b, id: `e${i}` });
+    }
+    const area = signedArea(points);
+    const outsideIsLeftNormal = area < 0; // CW => left outside, CCW => right outside
+    return this.computeForEdges(edges, { ...opts, outsideIsLeftNormal });
+  }
 }
 
+// 署名付き面積（画面座標系）: >0 CCW, <0 CW
+export function signedArea(points) {
+  let a = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const q = points[(i + 1) % points.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a / 2;
+}
