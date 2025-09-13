@@ -24,6 +24,7 @@ export default function ThreePlaceholder() {
 
     // 日本語コメント: ワイヤーフレームのキューブ
     const geo = new THREE.BoxGeometry(1, 1, 1)
+    // 壁色のポリシーに合わせてネオンブルー
     const mat = new THREE.MeshBasicMaterial({ color: 0x35a2ff, wireframe: true })
     const cube = new THREE.Mesh(geo, mat)
     scene.add(cube)
@@ -68,4 +69,3 @@ export default function ThreePlaceholder() {
 
   return <div ref={containerRef} className="w-full h-full" />
 }
-

@@ -4,6 +4,7 @@ import { DEFAULT_PX_PER_MM } from '@/core/units'
 import { bboxOf, outlineOf, TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_T, outlineL, outlineU, outlineT, bboxOfL, bboxOfU, bboxOfT } from '@/core/model'
 import { lengthToScreen, modelToScreen, screenToModel } from '@/core/transform'
 import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
+import { COLORS } from '@/ui/colors'
 // 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
 import { DimensionEngine } from '@/core/dimensions/dimension_engine'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
@@ -64,7 +65,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       if (snap.enableGrid && snap.gridMm > 0) {
         const stepPx = snap.gridMm * pxPerMm
         if (stepPx >= 8) { // 粗すぎる描画を避ける
-          ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+          // 補助: グリッドは極薄のライトグレー
+          ctx.strokeStyle = COLORS.grid
           ctx.lineWidth = 1
           ctx.beginPath()
           // 垂直グリッド
@@ -85,7 +87,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       // 日本語コメント: モデル生成（外形ポリゴン, mm）
       const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
       // 画面座標へ変換してCanvasに描画
-      ctx.strokeStyle = '#35a2ff'
+      // 壁: ネオンブルー
+      ctx.strokeStyle = COLORS.wall
       ctx.lineWidth = 2
       ctx.beginPath()
       const polyScreen = polyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
@@ -127,7 +130,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           mmLengths.push(Math.hypot(b.x - a.x, b.y - a.y))
         }
         const NS = 'http://www.w3.org/2000/svg'
-        // 辺の可視化（控えめな青）
+        // 補助: 辺の可視化（ライトグレー）
         for (let i = 0; i < polyScreen.length; i++) {
           const a = polyScreen[i]
           const b = polyScreen[(i + 1) % polyScreen.length]
@@ -136,18 +139,19 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           le.setAttribute('y1', String(a.y))
           le.setAttribute('x2', String(b.x))
           le.setAttribute('y2', String(b.y))
-          le.setAttribute('stroke', '#0b3b66')
+          le.setAttribute('stroke', COLORS.helper)
           le.setAttribute('stroke-width', '1')
-          svg.appendChild(le)
-        }
-        // 寸法線
-        for (const d of dims) {
-          const dl = document.createElementNS(NS, 'line')
+        svg.appendChild(le)
+      }
+      // 寸法線
+      for (const d of dims) {
+        const dl = document.createElementNS(NS, 'line')
           dl.setAttribute('x1', String(d.start.x))
           dl.setAttribute('y1', String(d.start.y))
           dl.setAttribute('x2', String(d.end.x))
           dl.setAttribute('y2', String(d.end.y))
-          dl.setAttribute('stroke', '#0d6efd')
+          // 補助: 寸法線はライトグレー
+          dl.setAttribute('stroke', COLORS.helper)
           dl.setAttribute('stroke-width', '1.5')
           dl.setAttribute('fill', 'none')
           svg.appendChild(dl)
@@ -161,7 +165,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           const baseY = d.textAnchor.y - 4
           tx.setAttribute('x', String(baseX))
           tx.setAttribute('y', String(baseY))
-          tx.setAttribute('fill', '#0d6efd')
+          // 補助: ラベル文字はライトグレー
+          tx.setAttribute('fill', COLORS.helper)
           tx.setAttribute('font-size', '12')
           const edgeIdx = Number(d.edgeId?.replace('e', '')) || 0
           const mmVal = mmLengths[edgeIdx] ?? 0
@@ -255,7 +260,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
             leader.setAttribute('y1', String(py))
             leader.setAttribute('x2', String(curX))
             leader.setAttribute('y2', String(curY))
-            leader.setAttribute('stroke', '#0d6efd')
+            // 補助: リーダー線はライトグレー
+            leader.setAttribute('stroke', COLORS.helper)
             leader.setAttribute('stroke-width', '1')
             leader.setAttribute('stroke-dasharray', '3 2')
             svg.appendChild(leader)
@@ -266,7 +272,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       }
 
       // 日本語コメント: 原点と軸の簡易ガイド（座標系の可視化）
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)'
+      // 補助: 原点軸は薄いライトグレー
+      ctx.strokeStyle = COLORS.axis
       ctx.lineWidth = 1
       ctx.beginPath()
       // X軸（中央水平）
