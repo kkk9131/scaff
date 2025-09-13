@@ -110,3 +110,12 @@
 - docs/開発ロードマップ.md のフェーズ2「線スタイル」を完了に変更
 - 実装分を feat コミット、ロードマップを docs コミットで分割
 - ブランチをリモートへプッシュ（feat/phase2-line-styles）
+
+2025-09-13: mainに取り込み（PRマージ反映）
+- リモートmainを取得しローカルmainへfast-forward
+- ローカルはmainに切替済み（feat/phase2-line-styles は保持）
+
+2025-09-13: 軒の出（Eaves Overhang）タスクを追加・ブランチ作成
+- 設計メモを追加（docs/design/eaves-overhang.md）
+- ロードマップにタスクを追記（docs/開発ロードマップ.md）
+- 作業ブランチ作成（feat/phase2-eaves-overhang）
