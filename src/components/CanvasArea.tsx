@@ -7,14 +7,16 @@ import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
 import { COLORS } from '@/ui/colors'
 // 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
 import { DimensionEngine } from '@/core/dimensions/dimension_engine'
+import { offsetPolygonOuterVariable, signedArea as signedAreaModel } from '@/core/eaves/offset'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean } }> = ({ template = 'rect', snapOptions, dimensionOptions }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void }> = ({ template = 'rect', snapOptions, dimensionOptions, eavesOptions, onUpdateEaves }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dimEngineRef = useRef(new DimensionEngine())
   // 寸法設定は描画クロージャから参照するためRefに保持
   const dimOptsRef = useRef(dimensionOptions)
+  const eavesRef = useRef(eavesOptions)
   const [rectMm, setRectMm] = useState(INITIAL_RECT)
   const [lMm, setLMm] = useState(INITIAL_L)
   const [uMm, setUMm] = useState(INITIAL_U)
@@ -33,6 +35,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
   useEffect(() => { tRef.current = tMm }, [tMm])
   useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
   useEffect(() => { dimOptsRef.current = dimensionOptions; drawRef.current?.() }, [dimensionOptions])
+  useEffect(() => { eavesRef.current = eavesOptions; drawRef.current?.() }, [eavesOptions])
 
   useEffect(() => {
     const canvas = ref.current!
@@ -99,6 +102,91 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       ctx.closePath()
       ctx.stroke()
 
+      // 日本語コメント: 軒の出（外側オフセット）
+      const eaves = eavesRef.current
+      if (eaves?.enabled && (eaves.amountMm > 0 || (eaves.perEdge && Object.keys(eaves.perEdge).length > 0))) {
+        // オフセット多角形（モデル座標で計算）— 辺ごとに出幅があれば優先
+        const perMm = polyMm.map((_, i) => eaves.perEdge?.[i] ?? eaves.amountMm)
+        const eavesPolyMm = offsetPolygonOuterVariable(polyMm, perMm, { miterLimit: 8 })
+        const eavesPoly = eavesPolyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
+        // 描画（点線・壁色）— 出幅が0の辺は描画しない
+        ctx.strokeStyle = COLORS.wall
+        ctx.setLineDash([6, 4])
+        ctx.lineWidth = 2
+        const areaModel = signedAreaModel(polyMm)
+        const isConvexAt = (idx: number) => {
+          const n = polyMm.length
+          const i0 = (idx + n - 1) % n
+          const i1 = idx
+          const i2 = (idx + 1) % n
+          const v1 = { x: polyMm[i1].x - polyMm[i0].x, y: polyMm[i1].y - polyMm[i0].y }
+          const v2 = { x: polyMm[i2].x - polyMm[i1].x, y: polyMm[i2].y - polyMm[i1].y }
+          const z = v1.x * v2.y - v1.y * v2.x
+          return areaModel < 0 ? (z < 0) : (z > 0)
+        }
+        // まず各辺のオフセット線分を通常通り描画
+        for (let i=0;i<eavesPoly.length;i++) {
+          const dHere = perMm[i] ?? 0
+          if (dHere <= 0) continue
+          const next = (i+1) % eavesPoly.length
+          const pOff = eavesPoly[i]
+          const qOff = eavesPoly[next]
+          ctx.beginPath()
+          ctx.moveTo(pOff.x, pOff.y)
+          ctx.lineTo(qOff.x, qOff.y)
+          ctx.stroke()
+        }
+        // 片側（隣接辺が0）での接続はL字（水平/垂直）で壁頂点へ結ぶ
+        for (let i=0;i<eavesPoly.length;i++) {
+          const dHere = perMm[i] ?? 0
+          if (dHere <= 0) continue
+          const next = (i+1) % eavesPoly.length
+          const prev = (i-1+eavesPoly.length) % eavesPoly.length
+          const aWall = polyScreen[i]
+          const bWall = polyScreen[next]
+          const pOff = eavesPoly[i]
+          const qOff = eavesPoly[next]
+          const isHorizontal = Math.abs(aWall.y - bWall.y) < 1e-6
+          // 始点側（前辺が0かつ凸）
+          if ((perMm[prev] ?? 0) === 0 && isConvexAt(i)) {
+            const elbow = isHorizontal ? { x: aWall.x, y: pOff.y } : { x: pOff.x, y: aWall.y }
+            ctx.beginPath()
+            ctx.moveTo(pOff.x, pOff.y)
+            ctx.lineTo(elbow.x, elbow.y)
+            ctx.lineTo(aWall.x, aWall.y)
+            ctx.stroke()
+          }
+          // 終点側（次辺が0かつ凸）
+          if ((perMm[next] ?? 0) === 0 && isConvexAt(next)) {
+            const elbow = isHorizontal ? { x: bWall.x, y: qOff.y } : { x: qOff.x, y: bWall.y }
+            ctx.beginPath()
+            ctx.moveTo(qOff.x, qOff.y)
+            ctx.lineTo(elbow.x, elbow.y)
+            ctx.lineTo(bWall.x, bWall.y)
+            ctx.stroke()
+          }
+        }
+        ctx.setLineDash([])
+
+        // ラベル: 元エッジ中点と軒の中点の間に mm 値を配置（簡易）— 出幅0の辺はスキップ
+        ctx.fillStyle = COLORS.helper
+        ctx.font = '12px ui-sans-serif, system-ui, -apple-system'
+        for (let i=0;i<polyScreen.length;i++) {
+          const mmVal = perMm[i] ?? 0
+          if (mmVal <= 0) continue
+          const next = (i+1) % polyScreen.length
+          const a0 = polyScreen[i]
+          const b0 = polyScreen[next]
+          const pOff = eavesPoly[i]
+          const qOff = eavesPoly[next]
+          const mid0 = { x: (a0.x+b0.x)/2, y: (a0.y+b0.y)/2 }
+          const mid1 = { x: (pOff.x+qOff.x)/2, y: (pOff.y+qOff.y)/2 }
+          const tx = (mid0.x + mid1.x) / 2
+          const ty = (mid0.y + mid1.y) / 2
+          ctx.fillText(`${mmVal} mm`, tx + 4, ty - 4)
+        }
+      }
+
       // 日本語コメント: 寸法線オーバーレイ（SVG）を更新
       const svg = svgRef.current
       const opts = dimOptsRef.current
@@ -112,7 +200,16 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         while (svg.firstChild) svg.removeChild(svg.firstChild)
         // 寸法線を計算（外側=自動/手動）
         const offsetRaw = opts?.offset ?? 16
-        const offsetPx = (opts?.offsetUnit === 'mm') ? offsetRaw * pxPerMm : offsetRaw
+        let offsetPx = (opts?.offsetUnit === 'mm') ? offsetRaw * pxPerMm : offsetRaw
+        // 日本語コメント: 軒の出が有効な場合、寸法線は軒ラインより更に外側へ配置する
+        const eaves = eavesRef.current
+        if (eaves?.enabled) {
+          // 個別指定がある場合は最大値を採用
+          const maxMm = Math.max(eaves.amountMm || 0, ...Object.values(eaves.perEdge ?? {}))
+          const eavesPx = maxMm * pxPerMm
+          const extraGapPx = 12 // 軒ラインから更に離す視認性用の余白
+          offsetPx += eavesPx + extraGapPx
+        }
         const decimals = opts?.decimals ?? 0
         const mode = opts?.outsideMode ?? 'auto'
         let dims
@@ -349,7 +446,53 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         return Math.hypot(px - projx, py - projy)
       }
 
+      // まず軒の出ラインを優先してヒットテスト
+      const eaves = eavesRef.current
       let best: { idx: number; dist: number } | null = null
+      if (eaves?.enabled) {
+        const perMm = polyMm.map((_, i) => eaves.perEdge?.[i] ?? eaves.amountMm)
+        const eavesPolyMm = offsetPolygonOuterVariable(polyMm, perMm, { miterLimit: 8 })
+        const eavesPoly = eavesPolyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
+        for (let i=0;i<eavesPoly.length;i++) {
+          if ((perMm[i] ?? 0) <= 0) continue
+          const a = eavesPoly[i]
+          const b = eavesPoly[(i+1)%eavesPoly.length]
+          const d = distToSeg(x, y, a.x, a.y, b.x, b.y)
+          if (!best || d < best.dist) best = { idx: i, dist: d }
+        }
+        const eavesThreshold = 10
+        if (best && best.dist <= eavesThreshold) {
+          // 軒の出辺の編集へ
+          const edgeIdx = best.idx
+          const current = eaves.perEdge?.[edgeIdx] ?? eaves.amountMm
+          const cur = prompt(`辺${edgeIdx + 1} の軒の出(mm) を入力（空欄で解除、0で無し）`, String(current))
+          if (cur != null) {
+            const txt = cur.trim()
+            const per = { ...(eaves.perEdge ?? {}) }
+            if (txt === '') {
+              // 空欄 → 個別設定を解除（デフォルト値に戻す）
+              delete per[edgeIdx]
+            } else {
+              const num = Number(txt)
+              if (isNaN(num)) {
+                // 数値でない入力は無視（変更なし）
+              } else {
+                const v = Math.max(0, Math.min(3000, Math.round(num)))
+                // 0 は「この辺は無し」（個別0を保存）
+                per[edgeIdx] = v
+              }
+            }
+            eavesRef.current = { ...eaves, perEdge: per }
+            onUpdateEaves?.({ perEdge: per })
+            draw()
+            return
+          }
+        }
+        // 軒ラインにヒットしなかった場合のみ、壁ラインのヒットテストへ継続
+        best = null
+      }
+
+      // 壁ラインに対するヒットテスト
       for (let i=0;i<edges.length;i++) {
         const e = edges[i]
         const d = distToSeg(pt.x, pt.y, e.a.x, e.a.y, e.b.x, e.b.y)
@@ -362,6 +505,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       // 日本語コメント: テンプレート別に辺→寸法をマッピング
       // 併せて辺の名称を「左上の辺から時計回りで番号 + 外側法線の方位（北/東/南/西）」で表示する
       const edgeIdx = best.idx
+
+      // 軒ラインにヒットしなかった場合は、以降の壁ライン編集（既存の寸法編集など）へフォールバック
       const edgeNum = edgeIdx + 1
       const tang = {
         x: polyMm[(edgeIdx + 1) % polyMm.length].x - polyMm[edgeIdx].x,

@@ -20,6 +20,7 @@ export default function Page() {
     decimals: 0 as number,
     avoidCollision: true as boolean,
   })
+  const [eaves, setEaves] = useState({ enabled: false as boolean, amountMm: 600 as number, perEdge: {} as Record<number, number> })
   const [snap, setSnap] = useState({
     enableGrid: SNAP_DEFAULTS.enableGrid,
     gridMm: SNAP_DEFAULTS.gridMm,
@@ -58,16 +59,20 @@ export default function Page() {
             onSelectTemplate={setTemplate}
             currentTemplate={template}
             snap={snap}
-            onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
-            dimensions={dimensions}
-            onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
-          />
+          onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
+          dimensions={dimensions}
+          onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
+          eaves={eaves}
+          onUpdateEaves={(patch) => setEaves(s => ({ ...s, ...patch }))}
+        />
         <main className="flex-1">
           {view === '3d' ? <ThreePlaceholder /> : (
             <CanvasArea
               template={template}
               snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }}
               dimensionOptions={dimensions}
+              eavesOptions={eaves}
+              onUpdateEaves={(patch) => setEaves(s => ({ ...s, ...patch }))}
             />
           )}
         </main>
