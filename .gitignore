@@ -20,3 +20,6 @@ __pycache__/
 # Logs
 *.log
 !activity.log
+
+# YoYo AI version control directory
+.yoyo/

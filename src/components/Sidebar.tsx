@@ -16,12 +16,15 @@ export const Sidebar: React.FC<{
   onUpdateSnap?: (patch: Partial<Pick<SnapOptions, 'enableGrid' | 'gridMm' | 'enableOrtho' | 'orthoToleranceDeg'>>) => void
   dimensions?: { show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }
   onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }>) => void
-}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions }) => {
+  eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
+  onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
+}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
   const [openTemplate, setOpenTemplate] = useState(false)
   const [openSnap, setOpenSnap] = useState(false)
   const [openDims, setOpenDims] = useState(false)
+  const [openEaves, setOpenEaves] = useState(false)
   return (
     <aside className={`h-full bg-[var(--panel)] border-r border-neutral-800 transition-all duration-200 ${expanded ? 'w-56' : 'w-14'}`}>
       <div className="h-12 flex items-center justify-center border-b border-neutral-800">
@@ -204,6 +207,43 @@ export const Sidebar: React.FC<{
                 onClick={() => onUpdateDimensions?.({ avoidCollision: !dimensions?.avoidCollision })}
               >{dimensions?.avoidCollision ? 'ON' : 'OFF'}</button>
             </div>
+          </div>
+        )}
+
+        {/* 軒の出 */}
+        <button
+          className="w-full text-xs text-neutral-300 flex items-center justify-between bg-neutral-800/40 hover:bg-neutral-700/50 rounded px-2 py-1"
+          onClick={() => setOpenEaves(v => !v)}
+          aria-expanded={openEaves}
+          title="軒の出の開閉"
+        >
+          <span>軒の出</span>
+          {openEaves ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {openEaves && (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <label className="text-neutral-300">有効</label>
+              <button
+                className={`px-2 py-1 rounded ${eaves?.enabled ? 'bg-green-700' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                onClick={() => onUpdateEaves?.({ enabled: !eaves?.enabled })}
+              >{eaves?.enabled ? 'ON' : 'OFF'}</button>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-neutral-300">出幅(mm)</label>
+              <input
+                type="number"
+                min={0}
+                max={3000}
+                className="w-28 px-2 py-1 bg-neutral-800 border border-neutral-700 rounded text-right"
+                value={eaves?.amountMm ?? 600}
+                onChange={(e) => {
+                  const num = Number(e.target.value); const v = isNaN(num) ? 0 : Math.max(0, Math.min(3000, Math.round(num)))
+                  onUpdateEaves?.({ amountMm: v })
+                }}
+              />
+            </div>
+            <div className="text-[11px] text-neutral-400 pt-1">辺クリックで個別編集（mm）</div>
           </div>
         )}
       </div>
