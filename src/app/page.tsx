@@ -31,7 +31,8 @@ export default function Page() {
   })
   // 日本語コメント: フロア（階層）管理の最小状態。既定は 1F のみ。
   const [floors, setFloors] = useState<{ id: string; name: string; heightMm: number }[]>([
-    { id: 'f1', name: '1F', heightMm: 2800 }
+    { id: 'f1', name: '1F', heightMm: 2800 },
+    { id: 'roof', name: '屋根', heightMm: 2800 }
   ])
   const [activeFloorId, setActiveFloorId] = useState<string>('f1')
   const addFloor = () => {

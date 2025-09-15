@@ -28,7 +28,7 @@ export const Sidebar: React.FC<{
   onDeleteFloor?: (id: string) => void
   onDuplicateFloor?: (id: string) => void
   onUpdateFloor?: (id: string, patch: Partial<{ name: string; heightMm: number }>) => void
-}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, layers, onUpdateLayers, floors = [{ id: 'f1', name: '1F', heightMm: 2800 }], activeFloorId, onSelectFloor, onAddFloor, onDeleteFloor, onDuplicateFloor, onUpdateFloor }) => {
+}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, layers, onUpdateLayers, floors = [{ id: 'f1', name: '1F', heightMm: 2800 }, { id: 'roof', name: '屋根', heightMm: 2800 }], activeFloorId, onSelectFloor, onAddFloor, onDeleteFloor, onDuplicateFloor, onUpdateFloor }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
   const [openTemplate, setOpenTemplate] = useState(false)
