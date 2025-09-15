@@ -42,3 +42,4 @@ A docs-first repository for a drawing editor MVP. Core specifications live under
 - Japanese README: `README.ja.md`
 - Specs: `docs/`
 - Development Flow: `docs/Development-Flow.md`
+- Roadmaps: `docs/開発ロードマップ.md` (JA) / `docs/Roadmap.md` (EN)
