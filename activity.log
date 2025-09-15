@@ -191,6 +191,10 @@
 2025-09-15: ロードマップのズーム機能を完了に更新
 - docs/開発ロードマップ.md の該当チェックを [x] に変更
 - 関連ブランチ: feat/phase2-zoom-canvas
+
+2025-09-15: ズーム機能を main に統合
+- main を最新化（fetch→pull --ff-only）
+- feat/phase2-zoom-canvas を main へマージし push
 2025-09-15: フェーズ2 ズーム機能の初期実装
 - ブランチをリモート公開（feat/phase2-zoom-canvas）
 - Canvasのホイール/キーボードズームを実装（カーソル中心、Ctrl+ホイール対応）
