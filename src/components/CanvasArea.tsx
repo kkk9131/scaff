@@ -17,6 +17,11 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
   // 寸法設定は描画クロージャから参照するためRefに保持
   const dimOptsRef = useRef(dimensionOptions)
   const eavesRef = useRef(eavesOptions)
+  // 日本語コメント: ズームとパンの状態（px基準）。zoomはオートフィットに対する倍率。
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState<{x:number;y:number}>({ x: 0, y: 0 })
+  const zoomRef = useRef(1)
+  const panRef = useRef<{x:number;y:number}>({ x: 0, y: 0 })
   const [rectMm, setRectMm] = useState(INITIAL_RECT)
   const [lMm, setLMm] = useState(INITIAL_L)
   const [uMm, setUMm] = useState(INITIAL_U)
@@ -36,6 +41,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
   useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
   useEffect(() => { dimOptsRef.current = dimensionOptions; drawRef.current?.() }, [dimensionOptions])
   useEffect(() => { eavesRef.current = eavesOptions; drawRef.current?.() }, [eavesOptions])
+  useEffect(() => { zoomRef.current = zoom; drawRef.current?.() }, [zoom])
+  useEffect(() => { panRef.current = pan; drawRef.current?.() }, [pan])
 
   useEffect(() => {
     const canvas = ref.current!
@@ -53,15 +60,18 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       // 画面クリア
       ctx.clearRect(0, 0, cssBounds.width, cssBounds.height)
 
-      // 日本語コメント: スケール（px/mm）。例: 1px=5mm → 0.2px/mm
-      // 形状のバウンディングボックスでオートフィット（上限は既定値）。
+      // 日本語コメント: スケール（px/mm）。形状のバウンディングボックスでオートフィットし、ユーザー倍率を適用。
       const kind = templateRef.current
       const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
       const wFit = cssBounds.width * 0.9 / bb.widthMm
       const hFit = cssBounds.height * 0.9 / bb.heightMm
-      const pxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
+      const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
+      const pxPerMm = Math.max(0.05, Math.min(10, basePxPerMm * zoomRef.current))
 
-      const center = modelToScreen({ x: 0, y: 0 }, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+      // 日本語コメント: パンは画面座標の平行移動量（px）。
+      const panNow = panRef.current
+      const centerBase = modelToScreen({ x: 0, y: 0 }, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+      const center = { x: centerBase.x + panNow.x, y: centerBase.y + panNow.y }
 
       const snap = snapOptions ?? SNAP_DEFAULTS
       // 日本語コメント: グリッド描画（スナップ可視化）。薄い線で gridMm 間隔
@@ -94,7 +104,10 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       ctx.strokeStyle = COLORS.wall
       ctx.lineWidth = 2
       ctx.beginPath()
-      const polyScreen = polyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
+      const polyScreen = polyMm.map(p => {
+        const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+        return { x: s.x + panNow.x, y: s.y + panNow.y }
+      })
       polyScreen.forEach((s, i) => {
         if (i === 0) ctx.moveTo(s.x, s.y)
         else ctx.lineTo(s.x, s.y)
@@ -108,7 +121,10 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         // オフセット多角形（モデル座標で計算）— 辺ごとに出幅があれば優先
         const perMm = polyMm.map((_, i) => eaves.perEdge?.[i] ?? eaves.amountMm)
         const eavesPolyMm = offsetPolygonOuterVariable(polyMm, perMm, { miterLimit: 8 })
-        const eavesPoly = eavesPolyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
+        const eavesPoly = eavesPolyMm.map(p => {
+          const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+          return { x: s.x + panNow.x, y: s.y + panNow.y }
+        })
         // 描画（点線・壁色）— 出幅が0の辺は描画しない
         ctx.strokeStyle = COLORS.wall
         ctx.setLineDash([6, 4])
@@ -394,7 +410,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       ctx.fillStyle = '#ffffff'
       const r = 3
       for (const p of polyMm) {
-        const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+        const s0 = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+        const s = { x: s0.x + panNow.x, y: s0.y + panNow.y }
         ctx.beginPath()
         ctx.arc(s.x, s.y, r, 0, Math.PI * 2)
         ctx.fill()
@@ -416,12 +433,18 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       const bbNow = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
       const wFit = cssBounds.width * 0.9 / bbNow.widthMm
       const hFit = cssBounds.height * 0.9 / bbNow.heightMm
-      const pxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
+      const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
+      const pxPerMm = Math.max(0.05, Math.min(10, basePxPerMm * zoomRef.current))
+      const panNow = panRef.current
       const center = modelToScreen({ x: 0, y: 0 }, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+      center.x += panNow.x; center.y += panNow.y
 
       // 現在形状のスクリーン座標ポリライン（閉路）を生成
       const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
-      const poly = polyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
+      const poly = polyMm.map(p => {
+        const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+        return { x: s.x + panNow.x, y: s.y + panNow.y }
+      })
       // エッジ列挙（終点→始点で閉路）
       type EdgeInfo = { a: {x:number;y:number}, b: {x:number;y:number}, key: string }
       const edges: EdgeInfo[] = []
@@ -452,7 +475,10 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       if (eaves?.enabled) {
         const perMm = polyMm.map((_, i) => eaves.perEdge?.[i] ?? eaves.amountMm)
         const eavesPolyMm = offsetPolygonOuterVariable(polyMm, perMm, { miterLimit: 8 })
-        const eavesPoly = eavesPolyMm.map(p => modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm))
+        const eavesPoly = eavesPolyMm.map(p => {
+          const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+          return { x: s.x + panNow.x, y: s.y + panNow.y }
+        })
         for (let i=0;i<eavesPoly.length;i++) {
           if ((perMm[i] ?? 0) <= 0) continue
           const a = eavesPoly[i]
@@ -658,12 +684,13 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       const bbNow = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
       const wFit = cssBounds.width * 0.9 / bbNow.widthMm
       const hFit = cssBounds.height * 0.9 / bbNow.heightMm
-      const pxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
+      const pxPerMm = Math.max(0.05, Math.min(10, Math.min(DEFAULT_PX_PER_MM, wFit, hFit) * zoomRef.current))
       const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
       const thresholdPx = 8
       let hitIdx: number | null = null
       for (let i = 0; i < polyMm.length; i++) {
-        const s = modelToScreen(polyMm[i], { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+        const s0 = modelToScreen(polyMm[i], { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+        const s = { x: s0.x + panRef.current.x, y: s0.y + panRef.current.y }
         const dx = s.x - x
         const dy = s.y - y
         if (dx*dx + dy*dy <= thresholdPx*thresholdPx) { hitIdx = i; break }
@@ -685,7 +712,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
       const pxPerMm = dragPxPerMm ?? DEFAULT_PX_PER_MM
       const viewSize = dragBounds ?? { width: cssBounds.width, height: cssBounds.height }
       // 日本語コメント: マウス位置（mm）を算出し、スナップ適用
-      const rawMm = screenToModel({ x, y }, viewSize, pxPerMm)
+      const rawMm = screenToModel({ x: x - panRef.current.x, y: y - panRef.current.y }, viewSize, pxPerMm)
       const snapApply = snapOptions ?? SNAP_DEFAULTS
       const ptMm = applySnaps(rawMm, { ...snapApply, anchor: { x: 0, y: 0 } })
       const kind = templateRef.current
@@ -773,10 +800,81 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
 
     canvas.addEventListener('mousedown', onMouseDown)
 
+    // 日本語コメント: ホイール/ピンチでズーム（カーソル位置を中心に）。Ctrl+ホイールも対応。
+    const onWheel = (ev: WheelEvent) => {
+      ev.preventDefault()
+      const cssBounds = canvas.getBoundingClientRect()
+      const cx = ev.clientX - cssBounds.left
+      const cy = ev.clientY - cssBounds.top
+      const kind = templateRef.current
+      const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+      const wFit = cssBounds.width * 0.9 / bb.widthMm
+      const hFit = cssBounds.height * 0.9 / bb.heightMm
+      const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
+      const pxPerMmOld = Math.max(0.05, Math.min(10, basePxPerMm * zoomRef.current))
+      const scale = Math.pow(1.0015, -ev.deltaY)
+      const nextZoom = Math.max(0.1, Math.min(20, zoomRef.current * scale))
+      const pxPerMmNew = Math.max(0.05, Math.min(10, basePxPerMm * nextZoom))
+      // 画面座標→モデル座標（パンを考慮して逆変換）
+      const mmAtCursor = screenToModel({ x: cx - panRef.current.x, y: cy - panRef.current.y }, { width: cssBounds.width, height: cssBounds.height }, pxPerMmOld)
+      // 新スケールで同一点がカーソル位置に来るようパンを更新
+      const sNew = modelToScreen(mmAtCursor, { width: cssBounds.width, height: cssBounds.height }, pxPerMmNew)
+      const newPan = { x: cx - sNew.x, y: cy - sNew.y }
+      zoomRef.current = nextZoom
+      panRef.current = newPan
+      setZoom(nextZoom)
+      setPan(newPan)
+      draw()
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+
+    // 日本語コメント: キーボードでズーム（+/-/0）。0でリセット。
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '+' || e.key === '=') {
+        const cssBounds = canvas.getBoundingClientRect()
+        const cx = cssBounds.width / 2, cy = cssBounds.height / 2
+        const kind = templateRef.current
+        const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+        const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, cssBounds.width * 0.9 / bb.widthMm, cssBounds.height * 0.9 / bb.heightMm)
+        const pxPerMmOld = Math.max(0.05, Math.min(10, basePxPerMm * zoomRef.current))
+        const nextZoom = Math.min(20, zoomRef.current * 1.1)
+        const pxPerMmNew = Math.max(0.05, Math.min(10, basePxPerMm * nextZoom))
+        const mmAtCenter = screenToModel({ x: cx - panRef.current.x, y: cy - panRef.current.y }, { width: cssBounds.width, height: cssBounds.height }, pxPerMmOld)
+        const sNew = modelToScreen(mmAtCenter, { width: cssBounds.width, height: cssBounds.height }, pxPerMmNew)
+        const newPan = { x: cx - sNew.x, y: cy - sNew.y }
+        zoomRef.current = nextZoom; panRef.current = newPan
+        setZoom(nextZoom); setPan(newPan); draw()
+      } else if (e.key === '-') {
+        const cssBounds = canvas.getBoundingClientRect()
+        const cx = cssBounds.width / 2, cy = cssBounds.height / 2
+        const kind = templateRef.current
+        const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+        const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, cssBounds.width * 0.9 / bb.widthMm, cssBounds.height * 0.9 / bb.heightMm)
+        const pxPerMmOld = Math.max(0.05, Math.min(10, basePxPerMm * zoomRef.current))
+        const nextZoom = Math.max(0.1, zoomRef.current / 1.1)
+        const pxPerMmNew = Math.max(0.05, Math.min(10, basePxPerMm * nextZoom))
+        const mmAtCenter = screenToModel({ x: cx - panRef.current.x, y: cy - panRef.current.y }, { width: cssBounds.width, height: cssBounds.height }, pxPerMmOld)
+        const sNew = modelToScreen(mmAtCenter, { width: cssBounds.width, height: cssBounds.height }, pxPerMmNew)
+        const newPan = { x: cx - sNew.x, y: cy - sNew.y }
+        zoomRef.current = nextZoom; panRef.current = newPan
+        setZoom(nextZoom); setPan(newPan); draw()
+      } else if (e.key === '0') {
+        // リセット（オートフィット）
+        zoomRef.current = 1
+        panRef.current = { x: 0, y: 0 }
+        setZoom(1)
+        setPan({ x: 0, y: 0 })
+        draw()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+
     return () => {
       ro.disconnect()
       canvas.removeEventListener('click', onClick)
       canvas.removeEventListener('mousedown', onMouseDown)
+      canvas.removeEventListener('wheel', onWheel)
+      window.removeEventListener('keydown', onKey)
       window.removeEventListener('mousemove', onMouseMove)
     }
   }, [])
@@ -785,6 +883,53 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
     <div className="w-full h-full relative">
       <canvas ref={ref} className="w-full h-full bg-[#0f1113]" />
       <svg ref={svgRef} className="absolute inset-0 pointer-events-none" />
+      {/* 日本語コメント: ズームUI（右上）。100%表示と±ボタン。*/}
+      <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/40 text-white rounded px-2 py-1 select-none">
+        <button
+          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+          onClick={() => {
+            const el = ref.current!
+            const css = el.getBoundingClientRect()
+            const cx = css.width / 2, cy = css.height / 2
+            const kind = templateRef.current
+            const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+            const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, css.width * 0.9 / bb.widthMm, css.height * 0.9 / bb.heightMm)
+            const pxPerMmOld = Math.max(0.05, Math.min(10, basePxPerMm * zoomRef.current))
+            const nextZoom = Math.max(0.1, zoomRef.current / 1.1)
+            const pxPerMmNew = Math.max(0.05, Math.min(10, basePxPerMm * nextZoom))
+            const mmAtCenter = screenToModel({ x: cx - panRef.current.x, y: cy - panRef.current.y }, { width: css.width, height: css.height }, pxPerMmOld)
+            const sNew = modelToScreen(mmAtCenter, { width: css.width, height: css.height }, pxPerMmNew)
+            const newPan = { x: cx - sNew.x, y: cy - sNew.y }
+            zoomRef.current = nextZoom; panRef.current = newPan
+            setZoom(nextZoom); setPan(newPan)
+          }}
+        >-</button>
+        <div className="min-w-14 text-center tabular-nums">{Math.round(zoom * 100)}%</div>
+        <button
+          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+          onClick={() => {
+            const el = ref.current!
+            const css = el.getBoundingClientRect()
+            const cx = css.width / 2, cy = css.height / 2
+            const kind = templateRef.current
+            const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+            const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, css.width * 0.9 / bb.widthMm, css.height * 0.9 / bb.heightMm)
+            const pxPerMmOld = Math.max(0.05, Math.min(10, basePxPerMm * zoomRef.current))
+            const nextZoom = Math.min(20, zoomRef.current * 1.1)
+            const pxPerMmNew = Math.max(0.05, Math.min(10, basePxPerMm * nextZoom))
+            const mmAtCenter = screenToModel({ x: cx - panRef.current.x, y: cy - panRef.current.y }, { width: css.width, height: css.height }, pxPerMmOld)
+            const sNew = modelToScreen(mmAtCenter, { width: css.width, height: css.height }, pxPerMmNew)
+            const newPan = { x: cx - sNew.x, y: cy - sNew.y }
+            zoomRef.current = nextZoom; panRef.current = newPan
+            setZoom(nextZoom); setPan(newPan)
+          }}
+        >+</button>
+        <button
+          className="ml-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); zoomRef.current = 1; panRef.current = { x: 0, y: 0 } }}
+          title="表示をリセット"
+        >100%</button>
+      </div>
     </div>
   )
 }
