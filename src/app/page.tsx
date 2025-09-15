@@ -16,6 +16,8 @@ export default function Page() {
   const [expanded, setExpanded] = useState(true)
   const [view, setView] = useState<ViewMode>('plan')
   const [template, setTemplate] = useState<TemplateKind>('rect')
+  // 日本語コメント: 完全初期化時に再マウントを強制するためのキー
+  const [resetKey, setResetKey] = useState(0)
   // 日本語コメント: 階層管理（将来3D化に備える）。初期は1Fのみ。
   const [floors, setFloors] = useState<FloorState[]>([(() => {
     const f = createFloor({ index: 1 })
@@ -23,21 +25,23 @@ export default function Page() {
     return f
   })()])
   const [activeFloorId, setActiveFloorId] = useState<string>(floors[0].id)
-  const [dimensions, setDimensions] = useState({
+  const DEFAULT_DIMENSIONS = {
     show: true as boolean,
     outsideMode: 'auto' as 'auto' | 'left' | 'right',
     offset: 16 as number,
     offsetUnit: 'px' as 'px' | 'mm',
     decimals: 0 as number,
     avoidCollision: true as boolean,
-  })
+  }
+  const [dimensions, setDimensions] = useState({ ...DEFAULT_DIMENSIONS })
   // const [eaves, setEaves] = useState({ enabled: false as boolean, amountMm: 600 as number, perEdge: {} as Record<number, number> }) // 階層別管理に移行
-  const [snap, setSnap] = useState({
+  const initialSnap = () => ({
     enableGrid: SNAP_DEFAULTS.enableGrid,
     gridMm: SNAP_DEFAULTS.gridMm,
     enableOrtho: SNAP_DEFAULTS.enableOrtho,
     orthoToleranceDeg: SNAP_DEFAULTS.orthoToleranceDeg,
   })
+  const [snap, setSnap] = useState(initialSnap())
   // 日本語コメント: 保存（JSONダウンロード）/ 読み込み（ファイル選択）
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
   const onSave = () => {
@@ -154,9 +158,14 @@ export default function Page() {
     clearLocalStorage()
     const f = createFloor({ index: 1 })
     f.color = pickFloorColors(0)
+    setExpanded(true)
+    setView('plan')
+    setTemplate('rect')
+    setDimensions({ ...DEFAULT_DIMENSIONS })
+    setSnap(initialSnap())
     setFloors([f])
     setActiveFloorId(f.id)
-    setTemplate(f.shape.kind)
+    setResetKey(k => k + 1) // 子コンポーネントを再マウントして内部状態（ズーム/パン等）も初期化
   }
 
   // 日本語コメント: PersistFloor → FloorState 変換（shapeがあれば優先。なければ長方形推定にフォールバック）
@@ -253,6 +262,7 @@ export default function Page() {
         <main className="flex-1">
           {view === '3d' ? <ThreePlaceholder /> : (
             <CanvasArea
+              key={resetKey}
               template={template}
               floors={floors}
               activeFloorId={activeFloorId}

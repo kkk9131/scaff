@@ -27,6 +27,7 @@ This mirrors `docs/開発ロードマップ.md` and is kept in sync. Japanese is
   - Include eaves (`enabled/amountMm/perEdge`) (done)
   - Include floors array: `id/name/elevationMm/heightMm/color/walls/eaves` (done)
   - Auto save/restore via localStorage (done)
+  - Reset editor to defaults via top-bar menu (done)
 
 ## Full Version (Elevation + 3D)
 - Phase 3: elevations from plan + heights
