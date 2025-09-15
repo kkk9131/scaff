@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react'
 import TopBar from '@/components/TopBar'
+import PreviewOverlay from '@/components/PreviewOverlay'
 import Sidebar, { ViewMode } from '@/components/Sidebar'
 import CanvasArea from '@/components/CanvasArea'
 import { createFloor, duplicateFloor, FloorState, randomId, nextFloorName } from '@/core/floors'
@@ -42,6 +43,8 @@ export default function Page() {
     orthoToleranceDeg: SNAP_DEFAULTS.orthoToleranceDeg,
   })
   const [snap, setSnap] = useState(initialSnap())
+  // 日本語コメント: プレビュー表示状態
+  const [previewOpen, setPreviewOpen] = useState(false)
   // 日本語コメント: 保存（JSONダウンロード）/ 読み込み（ファイル選択）
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
   const onSave = () => {
@@ -200,7 +203,7 @@ export default function Page() {
 
   return (
     <div className="h-dvh flex flex-col">
-      <TopBar onSave={onSave} onLoad={onLoad} onReset={resetEditor} />
+      <TopBar onSave={onSave} onLoad={onLoad} onPreview={() => setPreviewOpen(true)} onReset={resetEditor} />
       {/* 日本語コメント: 読み込み用の非表示ファイル入力 */}
       <input
         ref={fileInputRef}
@@ -276,6 +279,9 @@ export default function Page() {
           )}
         </main>
       </div>
+      {previewOpen && (
+        <PreviewOverlay floors={floors} onClose={() => setPreviewOpen(false)} />
+      )}
     </div>
   )
 }
