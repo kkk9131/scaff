@@ -21,3 +21,14 @@ export const COLORS = {
 
 export type ColorKeys = keyof typeof COLORS
 
+// 日本語コメント: HEX(#RRGGBB)にアルファを適用してrgba()文字列を返す
+export function withAlpha(hex: string, alpha: number): string {
+  const m = hex.trim().match(/^#([0-9a-fA-F]{6})$/)
+  if (!m) return hex
+  const n = parseInt(m[1], 16)
+  const r = (n >> 16) & 0xff
+  const g = (n >> 8) & 0xff
+  const b = n & 0xff
+  const a = Math.max(0, Math.min(1, alpha))
+  return `rgba(${r}, ${g}, ${b}, ${a})`
+}

@@ -12,16 +12,28 @@ export const Sidebar: React.FC<{
   current?: ViewMode
   onSelectTemplate?: (t: TemplateKind) => void
   currentTemplate?: TemplateKind
+  // 階層管理UI
+  floors?: Array<{ id: string; name: string; elevationMm: number; heightMm: number; visible: boolean; locked: boolean; color?: { walls?: string; eaves?: string } }>
+  activeFloorId?: string
+  onSelectFloor?: (id: string) => void
+  onAddFloor?: () => void
+  onDuplicateFloor?: () => void
+  onRemoveFloor?: () => void
+  onPatchFloor?: (id: string, patch: Partial<{ name: string; elevationMm: number; heightMm: number; visible: boolean; locked: boolean }>) => void
+  onRenameFloor?: (id: string) => void
   snap?: Pick<SnapOptions, 'enableGrid' | 'gridMm' | 'enableOrtho' | 'orthoToleranceDeg'>
   onUpdateSnap?: (patch: Partial<Pick<SnapOptions, 'enableGrid' | 'gridMm' | 'enableOrtho' | 'orthoToleranceDeg'>>) => void
   dimensions?: { show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }
   onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }>) => void
   eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
   onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
-}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
+}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect',
+  floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor, onPatchFloorEaves,
+  snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
   const [openTemplate, setOpenTemplate] = useState(false)
+  const [openFloors, setOpenFloors] = useState(true)
   const [openSnap, setOpenSnap] = useState(false)
   const [openDims, setOpenDims] = useState(false)
   const [openEaves, setOpenEaves] = useState(false)
@@ -33,6 +45,75 @@ export const Sidebar: React.FC<{
         </button>
       </div>
       <div className="p-3 space-y-3">
+        {/* 階層 */}
+        <button
+          className="w-full text-xs text-neutral-300 flex items-center justify-between bg-neutral-800/40 hover:bg-neutral-700/50 rounded px-2 py-1"
+          onClick={() => setOpenFloors(v => !v)}
+          aria-expanded={openFloors}
+          title="階層の開閉"
+        >
+          <span>階層</span>
+          {openFloors ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {openFloors && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1">
+              <button className="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600" onClick={onAddFloor}>追加</button>
+              <button className="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600" onClick={onDuplicateFloor}>複製</button>
+              <button className="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600" onClick={onRemoveFloor}>削除</button>
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  className="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600"
+                  title="前の階へ"
+                  onClick={() => {
+                    const i = floors.findIndex(f => f.id === activeFloorId)
+                    if (i > 0) onSelectFloor?.(floors[i-1].id)
+                  }}
+                >▲</button>
+                <button
+                  className="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600"
+                  title="次の階へ"
+                  onClick={() => {
+                    const i = floors.findIndex(f => f.id === activeFloorId)
+                    if (i >= 0 && i < floors.length - 1) onSelectFloor?.(floors[i+1].id)
+                  }}
+                >▼</button>
+              </div>
+            </div>
+            <div className="space-y-1 max-h-48 overflow-auto pr-1">
+              {floors.map(f => (
+                <div key={f.id} className={`p-2 rounded border ${activeFloorId===f.id?'border-blue-500 bg-neutral-700/40':'border-neutral-700 bg-neutral-800/40'}`}>
+                  <div className="flex items-center gap-1 text-sm">
+                    <button className={`px-1 rounded ${f.visible?'bg-green-700':'bg-neutral-700 hover:bg-neutral-600'}`} onClick={() => onPatchFloor?.(f.id, { visible: !f.visible })} title="表示切替">{f.visible ? '👁' : '🚫'}</button>
+                    <button className={`px-1 rounded ${f.locked?'bg-red-700':'bg-neutral-700 hover:bg-neutral-600'}`} onClick={() => onPatchFloor?.(f.id, { locked: !f.locked })} title={f.locked?'ロック解除':'ロック'}>{f.locked ? '🔒' : '🔓'}</button>
+                    <button className={`flex-1 text-left px-2 py-0.5 rounded ${activeFloorId===f.id?'bg-neutral-600':'bg-neutral-700 hover:bg-neutral-600'}`} onClick={() => onSelectFloor?.(f.id)} title="アクティブにする">{activeFloorId===f.id?'●':'○'} {f.name}</button>
+                    <button className="px-1 rounded bg-neutral-700 hover:bg-neutral-600" onClick={() => onRenameFloor?.(f.id)}>改名</button>
+                  </div>
+                  <div className="mt-1 grid grid-cols-2 gap-2 text-[11px] text-neutral-300">
+                    <div className="flex items-center gap-1" title="床レベルZ（1Fは0mm想定）">
+                      <span>床Z</span>
+                      <div className="ml-auto flex items-center gap-1">
+                        <input className="w-24 px-1 py-0.5 bg-neutral-900 border border-neutral-700 rounded text-right" type="number" step={50} value={f.elevationMm}
+                          onChange={(e)=> onPatchFloor?.(f.id, { elevationMm: Number(e.target.value) || 0 })} />
+                        <span>mm</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1" title="階高（床Zから天井まで）">
+                      <span>階高</span>
+                      <div className="ml-auto flex items-center gap-1">
+                        <input className="w-24 px-1 py-0.5 bg-neutral-900 border border-neutral-700 rounded text-right" type="number" min={1} step={50} value={f.heightMm}
+                          onChange={(e)=> onPatchFloor?.(f.id, { heightMm: Math.max(1, Number(e.target.value)||0) })} />
+                        <span>mm</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-neutral-400 mt-1">PgUp/PgDnで階切替、非アクティブ階は半透明表示</div>
+                  {/* 軒の出の編集はアクティブ階のみ（キャンバス上の辺クリック）に限定 */}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {/* ビュー */}
         <button
           className="w-full text-xs text-neutral-300 flex items-center justify-between bg-neutral-800/40 hover:bg-neutral-700/50 rounded px-2 py-1"

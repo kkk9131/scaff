@@ -44,13 +44,37 @@
         walls?: string,
         eaves?: string,
       },
-      walls: { /* 平面形状（Polygon等）*/ },
-      eaves?: { enabled: boolean, amountMm: number, perEdge?: { [edgeIndex: number]: number } },
+      // 2Dと3D押し出しで利用する平面フットプリント
+      walls: {
+        outer: { x: number, y: number }[],   // 反時計回り（画面座標系）
+        holes?: { x: number, y: number }[][] // 任意の穴。時計回り
+      },
+      // 軒の出（2D/3Dで共用）
+      eaves?: {
+        enabled: boolean,
+        amountMm: number,
+        perEdge?: { [edgeIndex: number]: number }
+      },
     }
   ]
 }
 ```
 - レイヤーの可視/ロック状態は「保存なし」（セッション/UI状態）。必要に応じ将来保存に昇格。
+
+## 3D準備（押し出しの前提）
+- 単位/軸: mm、+Z が上。既定: 1Fの床Z=0mm。
+- 階の立体: `walls` を `zBottom = elevationMm` から `zTop = elevationMm + heightMm` までZ方向に押し出す。
+  - メッシュ安定化のため、外周=反時計回り、穴=時計回りを厳守。
+  - 本フェーズでは壁の厚みは持たせず、プリズム（中空）として扱う。
+- 3Dでの軒の出: `eaves.enabled` のとき、階の上端に薄い水平プレートを生成する。
+  - 平面形状=外周の外側オフセット（`amountMm`/`perEdge`）。2D仕様と同じく自己交差はUnionで解消。
+  - 垂直方向の範囲は `[zTop - eavesThicknessMm, zTop]`。
+  - `eavesThicknessMm` 既定=50mm（後から設定可能）。色は `color.eaves` を使用。
+- 屋根形状（切妻・寄棟など）は本フェーズの対象外（後続フェーズで追加）。
+
+## 受け入れ基準（3D対応の補足）
+- `walls` を外周+穴の構造で保存し、向きを規定通りに保持できる。
+- `eaves` から階上端の薄板形状を導出できる（有効時）。
 
 ## 既定値/上限（提案）
 - 新規階の既定値:
@@ -65,4 +89,3 @@
 - アクティブ階のみ編集可、他階は半透明/ロックでヒットしない。
 - 階ごと線色が反映され、複数階同時表示で視認性が保たれる。
 - 保存/読込で floors スキーマが再現される（レイヤー可視/ロックはセッションのみ）。
-

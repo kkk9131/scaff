@@ -43,13 +43,37 @@ This document defines floor (1F/2F/...) management. Height (Z) is stored for fut
         walls?: string,
         eaves?: string,
       },
-      walls: { /* planar geometry (Polygon etc.) */ },
-      eaves?: { enabled: boolean, amountMm: number, perEdge?: { [edgeIndex: number]: number } },
+      // Planar footprint used for 2D and for 3D extrusion
+      walls: {
+        outer: { x: number, y: number }[],   // CCW winding (screen coords)
+        holes?: { x: number, y: number }[][] // optional holes, CW winding
+      },
+      // Overhang settings (used in 2D and 3D)
+      eaves?: {
+        enabled: boolean,
+        amountMm: number,
+        perEdge?: { [edgeIndex: number]: number }
+      },
     }
   ]
 }
 ```
 - Layer visibility/lock is not persisted (session/UI state). Promote to persistence later if needed.
+
+## 3D Prep (Extrusion semantics)
+- Units/axes: millimeters, +Z is up. Default baseline: 1F floor Z = 0mm.
+- Floor volume: extrude the `walls` polygon from `zBottom = elevationMm` to `zTop = elevationMm + heightMm`.
+  - Outer ring CCW and holes CW are required for robust meshing.
+  - Resulting 3D is a hollow prism (no thickness for walls at this phase).
+- Eaves in 3D: if `eaves.enabled`, generate a thin horizontal plate at the top of the floor
+  - Plan shape = outward offset of the outer ring using `amountMm`/`perEdge`, with self-intersections resolved by union (same rule as 2D spec).
+  - Vertical span: `[zTop - eavesThicknessMm, zTop]`.
+  - `eavesThicknessMm` default: 50mm (configurable later). Color uses `color.eaves`.
+- Roof shapes (gable/hip, slopes) are out of scope for Phase 2 and will be added later.
+
+## Acceptance Criteria (amended for 3D readiness)
+- `walls` stored as outer+holes with defined winding (outer CCW, holes CW).
+- `eaves` settings are sufficient to derive a 3D thin plate at the floor top when enabled.
 
 ## Defaults & Limits (proposal)
 - New floor defaults:
@@ -64,4 +88,3 @@ This document defines floor (1F/2F/...) management. Height (Z) is stored for fut
 - Only active floor is editable; others are semi-transparent and not hit-testable.
 - Per-floor colors apply and remain legible with multi-floor display.
 - Save/load reproduces the `floors` schema (layer visibility/lock is session-only).
-
