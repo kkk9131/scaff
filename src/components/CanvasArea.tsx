@@ -9,7 +9,7 @@ import { COLORS } from '@/ui/colors'
 import { DimensionEngine } from '@/core/dimensions/dimension_engine'
 import { offsetPolygonOuterVariable, signedArea as signedAreaModel } from '@/core/eaves/offset'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; layers?: { [k in 'grid'|'guides'|'walls'|'eaves'|'dims']: { visible: boolean; locked: boolean } }; onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void }> = ({ template = 'rect', snapOptions, dimensionOptions, eavesOptions, layers, onUpdateEaves }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; layers?: { [k in 'grid'|'guides'|'walls'|'eaves'|'dims']: { visible: boolean; locked: boolean } }; onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void; onSnapshot?: (snap: { template: TemplateKind; rect?: typeof INITIAL_RECT; l?: typeof INITIAL_L; u?: typeof INITIAL_U; t?: typeof INITIAL_T; eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> } }) => void }> = ({ template = 'rect', snapOptions, dimensionOptions, eavesOptions, layers, onUpdateEaves, onSnapshot }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -42,6 +42,17 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
   useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
   useEffect(() => { dimOptsRef.current = dimensionOptions; drawRef.current?.() }, [dimensionOptions])
   useEffect(() => { eavesRef.current = eavesOptions; drawRef.current?.() }, [eavesOptions])
+  // 日本語コメント: スナップショット（現在の壁形状と軒の出）を親に通知
+  useEffect(() => {
+    const kind = templateRef.current
+    const snap: any = { template: kind }
+    if (kind === 'rect') snap.rect = rectRef.current
+    else if (kind === 'l') snap.l = lRef.current
+    else if (kind === 'u') snap.u = uRef.current
+    else if (kind === 't') snap.t = tRef.current
+    if (eavesRef.current) snap.eaves = eavesRef.current
+    onSnapshot?.(snap)
+  }, [rectMm, lMm, uMm, tMm, eavesOptions, template])
   useEffect(() => { layersRef.current = layers ?? layersRef.current; drawRef.current?.() }, [layers])
   useEffect(() => { zoomRef.current = zoom; drawRef.current?.() }, [zoom])
   useEffect(() => { panRef.current = pan; drawRef.current?.() }, [pan])
