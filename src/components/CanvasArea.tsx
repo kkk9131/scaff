@@ -135,9 +135,18 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         return { x: s.x + panNow.x, y: s.y + panNow.y }
       })
       // 日本語コメント: 非アクティブ階の描画（半透明、ヒットテスト対象外）
+      // 下階→アクティブ→上階の順で重ねる。名称が「nF」は数値で比較し、それ以外（例: 屋根）は上階として扱う。
       if (floors && floors.length > 0) {
-        for (const f of floors) {
-          if (f.id === activeFloorId) continue
+        const parseF = (name?: string) => {
+          const m = name && /^([0-9]+)F$/.exec(name)
+          return m ? parseInt(m[1], 10) : Infinity
+        }
+        const active = floors.find(f => f.id === activeFloorId)
+        const activeNum = parseF(active?.name)
+        const lower = floors.filter(f => f.id !== activeFloorId && parseF(f.name) < activeNum)
+        const upper = floors.filter(f => f.id !== activeFloorId && parseF(f.name) >= activeNum)
+
+        const drawFloor = (f: NonNullable<typeof floors[number]>) => {
           const fk = (f.template ?? kind) as TemplateKind
           const fPolyMm = fk === 'rect' ? outlineRect(f.walls ?? rectRef.current)
                         : fk === 'l'   ? outlineL(f.walls ?? lRef.current)
@@ -148,14 +157,9 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
             return { x: s.x + panNow.x, y: s.y + panNow.y }
           })
           if (layersNow.walls.visible) {
-            ctx.save()
-            ctx.globalAlpha = 0.35
-            ctx.strokeStyle = COLORS.wall
-            ctx.lineWidth = 2
-            ctx.beginPath()
-            fPolyScreen.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y) })
-            ctx.closePath(); ctx.stroke()
-            ctx.restore()
+            ctx.save(); ctx.globalAlpha = 0.35; ctx.strokeStyle = COLORS.wall; ctx.lineWidth = 2
+            ctx.beginPath(); fPolyScreen.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y) })
+            ctx.closePath(); ctx.stroke(); ctx.restore()
           }
           if (layersNow.eaves.visible && f.eaves?.enabled) {
             const perMm = fPolyMm.map((_, i) => f.eaves!.perEdge?.[i] ?? f.eaves!.amountMm)
@@ -166,6 +170,13 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
             ctx.setLineDash([]); ctx.restore()
           }
         }
+
+        // 下階を先に描く
+        lower.forEach(drawFloor)
+        // 上階はアクティブ階の後で描くため保持
+        var __upperFloorsToDraw: { list: typeof upper; draw: (f: any) => void } | null = { list: upper, draw: drawFloor }
+      } else {
+        var __upperFloorsToDraw: { list: any[]; draw: (f: any) => void } | null = null
       }
       // 壁: ネオンブルー（レイヤー可視時のみ）
       if (layersNow.walls.visible) {
@@ -268,6 +279,11 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           const ty = (mid0.y + mid1.y) / 2
           ctx.fillText(`${mmVal} mm`, tx + 4, ty - 4)
         }
+      }
+
+      // 日本語コメント: 上階（非アクティブ）を最後に重ねて視認性を確保
+      if (__upperFloorsToDraw) {
+        __upperFloorsToDraw.list.forEach(__upperFloorsToDraw.draw)
       }
 
       // 日本語コメント: 寸法線オーバーレイ（SVG）を更新
