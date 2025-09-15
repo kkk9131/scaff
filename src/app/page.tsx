@@ -8,7 +8,7 @@ import { pickFloorColors } from '@/ui/palette'
 import type { TemplateKind } from '@/core/model'
 import ThreePlaceholder from '@/components/ThreePlaceholder'
 import { SNAP_DEFAULTS } from '@/core/snap'
-import { downloadJson, loadFromLocalStorage, parseSaveData, saveToLocalStorage, serializeSaveData, type PersistFloor } from '@/io/persist'
+import { downloadJson, loadFromLocalStorage, parseSaveData, saveToLocalStorage, serializeSaveData, clearLocalStorage, type PersistFloor } from '@/io/persist'
 import type { FloorState as FS } from '@/core/floors'
 
 export default function Page() {
@@ -147,6 +147,18 @@ export default function Page() {
     if (cur != null) patchFloor(id, { name: cur || target?.name || '' })
   }
 
+  // 日本語コメント: エディタ初期化（確認ダイアログ→状態リセット→LS消去）
+  const resetEditor = () => {
+    if (!confirm('エディタを初期化します。現在の作業内容は失われます。よろしいですか？')) return
+    // まずLSを消去し、その後に初期状態を書き戻す
+    clearLocalStorage()
+    const f = createFloor({ index: 1 })
+    f.color = pickFloorColors(0)
+    setFloors([f])
+    setActiveFloorId(f.id)
+    setTemplate(f.shape.kind)
+  }
+
   // 日本語コメント: PersistFloor → FloorState 変換（shapeがあれば優先。なければ長方形推定にフォールバック）
   function persistFloorToState(pf: PersistFloor): FS {
     const base = createFloor({
@@ -229,8 +241,9 @@ export default function Page() {
             onDuplicateFloor={duplicateActiveFloor}
             onRemoveFloor={removeActiveFloor}
             onPatchFloor={patchFloor}
-            onRenameFloor={renameFloor}
-            snap={snap}
+          onRenameFloor={renameFloor}
+          onResetEditor={resetEditor}
+          snap={snap}
           onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
             dimensions={dimensions}
             onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}

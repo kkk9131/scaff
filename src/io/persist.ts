@@ -131,3 +131,7 @@ export function loadFromLocalStorage(): SaveFile | null {
   }
 }
 
+// 日本語コメント: ローカル保存の消去（初期化用）
+export function clearLocalStorage() {
+  try { localStorage.removeItem(LS_KEY) } catch {}
+}
