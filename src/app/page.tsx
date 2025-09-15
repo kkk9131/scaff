@@ -167,8 +167,8 @@ export default function Page() {
               onUpdateActiveFloorShape={(id, shape) => setFloors(prev => prev.map(f => f.id === id ? { ...f, shape: shape as any } : f))}
               snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }}
               dimensionOptions={dimensions}
-              eavesOptions={floors.find(f => f.id === activeFloorId)?.eaves}
-              onUpdateEaves={(patch) => setFloors(prev => prev.map(f => f.id === activeFloorId ? { ...f, eaves: { ...(f.eaves ?? { enabled:false, amountMm:600, perEdge:{} }), ...patch } } : f))}
+            eavesOptions={floors.find(f => f.id === activeFloorId)?.eaves}
+            onUpdateEaves={(id, patch) => setFloors(prev => prev.map(f => f.id === id ? { ...f, eaves: { ...(f.eaves ?? { enabled:false, amountMm:600, perEdge:{} }), ...patch } } : f))}
             />
           )}
         </main>

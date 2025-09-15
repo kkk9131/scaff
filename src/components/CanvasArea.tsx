@@ -10,7 +10,7 @@ import type { FloorState } from '@/core/floors'
 import { DimensionEngine } from '@/core/dimensions/dimension_engine'
 import { offsetPolygonOuterVariable, signedArea as signedAreaModel } from '@/core/eaves/offset'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState[]; activeFloorId?: string; activeShape?: { kind: 'rect'|'l'|'u'|'t'; data: any }; onUpdateActiveFloorShape?: (id: string, shape: { kind: 'rect'|'l'|'u'|'t'; data: any }) => void; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void }> = ({ template = 'rect', floors = [], activeFloorId, activeShape, onUpdateActiveFloorShape, snapOptions, dimensionOptions, eavesOptions, onUpdateEaves }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState[]; activeFloorId?: string; activeShape?: { kind: 'rect'|'l'|'u'|'t'; data: any }; onUpdateActiveFloorShape?: (id: string, shape: { kind: 'rect'|'l'|'u'|'t'; data: any }) => void; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; onUpdateEaves?: (id: string, patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void }> = ({ template = 'rect', floors = [], activeFloorId, activeShape, onUpdateActiveFloorShape, snapOptions, dimensionOptions, eavesOptions, onUpdateEaves }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -632,8 +632,9 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
                 per[edgeIdx] = v
               }
             }
-            eavesRef.current = { ...eaves, perEdge: per }
-            onUpdateEaves?.({ perEdge: per })
+            const id = activeFloorIdRef.current
+            eavesRef.current = { ...eaves, perEdge: per } // ローカル反映
+            if (id) onUpdateEaves?.(id, { perEdge: per })
             draw()
             return
           }
