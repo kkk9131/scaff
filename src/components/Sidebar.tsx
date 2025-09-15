@@ -20,7 +20,15 @@ export const Sidebar: React.FC<{
   onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
   layers?: { [k in 'grid'|'guides'|'walls'|'eaves'|'dims']: { visible: boolean; locked: boolean } }
   onUpdateLayers?: (id: 'grid'|'guides'|'walls'|'eaves'|'dims', patch: Partial<{ visible: boolean; locked: boolean }>) => void
-}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, layers, onUpdateLayers }) => {
+  // フロア（階層）管理の最小UI
+  floors?: { id: string; name: string; heightMm: number }[]
+  activeFloorId?: string
+  onSelectFloor?: (id: string) => void
+  onAddFloor?: () => void
+  onDeleteFloor?: (id: string) => void
+  onDuplicateFloor?: (id: string) => void
+  onUpdateFloor?: (id: string, patch: Partial<{ name: string; heightMm: number }>) => void
+}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, layers, onUpdateLayers, floors = [{ id: 'f1', name: '1F', heightMm: 2800 }], activeFloorId, onSelectFloor, onAddFloor, onDeleteFloor, onDuplicateFloor, onUpdateFloor }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
   const [openTemplate, setOpenTemplate] = useState(false)
@@ -28,6 +36,7 @@ export const Sidebar: React.FC<{
   const [openDims, setOpenDims] = useState(false)
   const [openEaves, setOpenEaves] = useState(false)
   const [openLayers, setOpenLayers] = useState(false)
+  const [openFloors, setOpenFloors] = useState(true)
   return (
     <aside className={`h-full bg-[var(--panel)] border-r border-neutral-800 transition-all duration-200 ${expanded ? 'w-56' : 'w-14'}`}>
       <div className="h-12 flex items-center justify-center border-b border-neutral-800">
@@ -285,6 +294,55 @@ export const Sidebar: React.FC<{
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* 階層（フロア） */}
+        <button
+          className="w-full text-xs text-neutral-300 flex items-center justify-between bg-neutral-800/40 hover:bg-neutral-700/50 rounded px-2 py-1"
+          onClick={() => setOpenFloors(v => !v)}
+          aria-expanded={openFloors}
+          title="階層の開閉"
+        >
+          <span>階層</span>
+          {openFloors ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {openFloors && (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-neutral-300">選択</label>
+              <select
+                className="flex-1 px-2 py-1 bg-neutral-800 border border-neutral-700 rounded"
+                value={activeFloorId ?? floors[0]?.id}
+                onChange={(e) => onSelectFloor?.(e.target.value)}
+              >
+                {floors.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
+                <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600" onClick={() => onAddFloor?.()} title="階層を追加">追加</button>
+                <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600" onClick={() => activeFloorId && onDuplicateFloor?.(activeFloorId)} title="選択階層を複製">複製</button>
+                <button className="px-2 py-1 rounded bg-red-700 hover:bg-red-600" onClick={() => activeFloorId && onDeleteFloor?.(activeFloorId)} title="選択階層を削除">削除</button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-neutral-300">高さ(mm)</label>
+              <input
+                type="number"
+                min={1}
+                max={10000}
+                className="w-28 px-2 py-1 bg-neutral-800 border border-neutral-700 rounded text-right"
+                value={(floors.find(f => f.id === (activeFloorId ?? floors[0]?.id))?.heightMm) ?? 2800}
+                onChange={(e) => {
+                  const num = Number(e.target.value); const v = isNaN(num) ? 0 : Math.max(1, Math.min(10000, Math.round(num)))
+                  const id = activeFloorId ?? floors[0]?.id
+                  if (id) onUpdateFloor?.(id, { heightMm: v })
+                }}
+              />
+            </div>
           </div>
         )}
       </div>

@@ -29,6 +29,41 @@ export default function Page() {
     eaves:  { visible: true, locked: false },
     dims:   { visible: true, locked: false },
   })
+  // 日本語コメント: フロア（階層）管理の最小状態。既定は 1F のみ。
+  const [floors, setFloors] = useState<{ id: string; name: string; heightMm: number }[]>([
+    { id: 'f1', name: '1F', heightMm: 2800 }
+  ])
+  const [activeFloorId, setActiveFloorId] = useState<string>('f1')
+  const addFloor = () => {
+    const nextIdx = floors.length + 1
+    const id = `f${nextIdx}`
+    const name = `${nextIdx}F`
+    const base = floors.find(f => f.id === activeFloorId) ?? floors[floors.length - 1]
+    const heightMm = base?.heightMm ?? 2800
+    setFloors(fs => [...fs, { id, name, heightMm }])
+    setActiveFloorId(id)
+  }
+  const deleteFloor = (id: string) => {
+    if (floors.length <= 1) return alert('少なくとも1つの階層が必要です')
+    setFloors(fs => fs.filter(f => f.id !== id))
+    if (activeFloorId === id) {
+      const remain = floors.filter(f => f.id !== id)
+      setActiveFloorId(remain[0]?.id ?? 'f1')
+    }
+  }
+  const duplicateFloor = (id: string) => {
+    const idx = floors.findIndex(f => f.id === id)
+    if (idx < 0) return
+    const src = floors[idx]
+    const nextIdx = floors.length + 1
+    const newId = `f${nextIdx}`
+    const name = `${nextIdx}F`
+    setFloors(fs => [...fs, { id: newId, name, heightMm: src.heightMm }])
+    setActiveFloorId(newId)
+  }
+  const updateFloor = (id: string, patch: Partial<{ name: string; heightMm: number }>) => {
+    setFloors(fs => fs.map(f => f.id === id ? { ...f, ...patch } : f))
+  }
   const [snap, setSnap] = useState({
     enableGrid: SNAP_DEFAULTS.enableGrid,
     gridMm: SNAP_DEFAULTS.gridMm,
@@ -74,6 +109,13 @@ export default function Page() {
           onUpdateEaves={(patch) => setEaves(s => ({ ...s, ...patch }))}
           layers={layers}
           onUpdateLayers={(id, patch) => setLayers(ls => ({ ...ls, [id]: { ...ls[id as keyof typeof ls], ...patch } }))}
+          floors={floors}
+          activeFloorId={activeFloorId}
+          onSelectFloor={setActiveFloorId}
+          onAddFloor={addFloor}
+          onDeleteFloor={deleteFloor}
+          onDuplicateFloor={duplicateFloor}
+          onUpdateFloor={updateFloor}
         />
         <main className="flex-1">
           {view === '3d' ? <ThreePlaceholder /> : (
@@ -83,8 +125,9 @@ export default function Page() {
               dimensionOptions={dimensions}
               eavesOptions={eaves}
               layers={layers}
-              onUpdateEaves={(patch) => setEaves(s => ({ ...s, ...patch }))}
-            />
+              // 未来対応: floors/activeFloorId を渡してアクティブ階のみ編集、他階は半透明表示にする
+            onUpdateEaves={(patch) => setEaves(s => ({ ...s, ...patch }))}
+          />
           )}
         </main>
       </div>
