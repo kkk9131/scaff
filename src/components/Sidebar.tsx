@@ -28,7 +28,7 @@ export const Sidebar: React.FC<{
   eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
   onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
 }> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect',
-  floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor, onPatchFloorEaves,
+  floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor,
   snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
@@ -327,6 +327,8 @@ export const Sidebar: React.FC<{
             <div className="text-[11px] text-neutral-400 pt-1">辺クリックで個別編集（mm）</div>
           </div>
         )}
+
+        {/* データセクションはMVPでは上部バーに集約 */}
       </div>
     </aside>
   )
