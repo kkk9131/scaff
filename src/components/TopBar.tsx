@@ -7,6 +7,7 @@ export const TopBar: React.FC<{ onSave: () => void; onLoad: () => void }> = ({ o
     <div className="w-full h-12 bg-[var(--panel)] flex items-center justify-between px-3 border-b border-neutral-800">
       <div className="font-medium">Scaff</div>
       <div className="flex gap-2">
+        {/* 日本語コメント: 保存=JSONダウンロード、読み込み=ファイル選択 */}
         <Button onClick={onSave}>保存</Button>
         <Button variant="outline" onClick={onLoad}>読み込み</Button>
       </div>

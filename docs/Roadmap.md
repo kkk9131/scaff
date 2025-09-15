@@ -23,9 +23,10 @@ This mirrors `docs/開発ロードマップ.md` and is kept in sync. Japanese is
   - 3D prep: extrude semantics zBottom=`elevationMm`, zTop=`elevationMm+heightMm`
 
 ### Phase 5: Data
-- Save/load JSON
-  - Include eaves (`enabled/amountMm/perEdge`)
-  - Include floors array: `id/name/elevationMm/heightMm/color/walls/eaves`
+- Save/load JSON (done)
+  - Include eaves (`enabled/amountMm/perEdge`) (done)
+  - Include floors array: `id/name/elevationMm/heightMm/color/walls/eaves` (done)
+  - Auto save/restore via localStorage (done)
 
 ## Full Version (Elevation + 3D)
 - Phase 3: elevations from plan + heights
@@ -36,4 +37,3 @@ This mirrors `docs/開発ロードマップ.md` and is kept in sync. Japanese is
 - MVP: Phases 1 + 2 + 5
 - Future: Phases 3 + 4
 - Visual polish: Phase 6
-

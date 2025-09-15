@@ -293,3 +293,13 @@
 2025-09-15 20:25: Roadmap(英語)を追加しREADMEリンク更新
 - docs/Roadmap.md を追加（開発ロードマップの英訳/同期用）
 - READMEに JA/EN 両方のロードマップへのリンクを追記
+2025-09-15: フェーズ5「データ管理（MVP必須）」ブランチ作成
+- 作業用ブランチを作成（phase5/data-management-mvp）
+- フェーズ5着手準備としてロードマップを再確認
+2025-09-15: フェーズ5（データ管理）実装
+- JSON保存/読み込みを実装（src/io/persist.ts、TopBar配線、Page読み込みUI）
+- floors/eaves/color/shapeを保存し、walls.outerはCCWへ正規化
+- ローカルストレージ自動保存/復元を追加
+- docs/開発ロードマップ.mdのフェーズ5を完了に更新、READMEに使い方を追記
+2025-09-15: ビルドエラー修正
+- src/app/page.tsx の重複インポート（createFloor）を解消

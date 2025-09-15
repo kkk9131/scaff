@@ -8,6 +8,8 @@ import { pickFloorColors } from '@/ui/palette'
 import type { TemplateKind } from '@/core/model'
 import ThreePlaceholder from '@/components/ThreePlaceholder'
 import { SNAP_DEFAULTS } from '@/core/snap'
+import { downloadJson, loadFromLocalStorage, parseSaveData, saveToLocalStorage, serializeSaveData, type PersistFloor } from '@/io/persist'
+import type { FloorState as FS } from '@/core/floors'
 
 export default function Page() {
   // 日本語コメント: フェーズ1のUI骨格（上部バー＋左サイドバー＋中央キャンバス）
@@ -36,13 +38,19 @@ export default function Page() {
     enableOrtho: SNAP_DEFAULTS.enableOrtho,
     orthoToleranceDeg: SNAP_DEFAULTS.orthoToleranceDeg,
   })
+  // 日本語コメント: 保存（JSONダウンロード）/ 読み込み（ファイル選択）
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
   const onSave = () => {
-    // 日本語コメント: 保存（ダミー）
-    alert('保存（ダミー）')
+    const text = serializeSaveData(floors, activeFloorId)
+    const ts = new Date()
+    const pad = (n:number)=> String(n).padStart(2,'0')
+    const name = `scaff-${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.json`
+    downloadJson(name, text)
   }
   const onLoad = () => {
-    // 日本語コメント: 読み込み（ダミー）
-    alert('読み込み（ダミー）')
+    if (!fileInputRef.current) return
+    fileInputRef.current.value = ''
+    fileInputRef.current.click()
   }
   // 日本語コメント: ショートカット登録（g: グリッド切替, o: 直角切替）
   useEffect(() => {
@@ -62,6 +70,31 @@ export default function Page() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [activeFloorId, floors])
+
+  // 日本語コメント: 起動時にローカルストレージから復元
+  useEffect(() => {
+    const saved = loadFromLocalStorage()
+    if (saved && saved.floors?.length) {
+      try {
+        const restored = saved.floors.map(pf => persistFloorToState(pf))
+        setFloors(restored)
+        if (saved.activeFloorId && restored.some(f => f.id === saved.activeFloorId)) {
+          setActiveFloorId(saved.activeFloorId)
+        } else {
+          setActiveFloorId(restored[0].id)
+        }
+      } catch (e) {
+        console.warn('ローカル保存の復元に失敗しました', e)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 日本語コメント: 変更をローカルストレージに保存（簡易デバウンス）
+  useEffect(() => {
+    const h = setTimeout(() => saveToLocalStorage(floors, activeFloorId), 300)
+    return () => clearTimeout(h)
+  }, [floors, activeFloorId])
 
   // 日本語コメント: フロア操作（追加/削除/複製/リネーム/高さ編集/表示/ロック）
   const addFloorAboveActive = () => {
@@ -114,6 +147,30 @@ export default function Page() {
     if (cur != null) patchFloor(id, { name: cur || target?.name || '' })
   }
 
+  // 日本語コメント: PersistFloor → FloorState 変換（shapeがあれば優先。なければ長方形推定にフォールバック）
+  function persistFloorToState(pf: PersistFloor): FS {
+    const base = createFloor({
+      id: pf.id,
+      name: pf.name,
+      elevationMm: pf.elevationMm,
+      heightMm: pf.heightMm,
+      visible: pf.visible ?? true,
+      locked: pf.locked ?? false,
+      color: pf.color,
+      shape: pf.shape as any ?? { kind: 'rect', data: inferRectFromOuter(pf.walls?.outer) },
+      eaves: pf.eaves ?? { enabled: false, amountMm: 600, perEdge: {} },
+    })
+    return base
+  }
+
+  // 日本語コメント: 外周ポリゴンから最小の長方形テンプレ（簡易）を推定（再編集を担保）
+  function inferRectFromOuter(outer: Array<{ x:number; y:number }> | undefined) {
+    if (!outer || outer.length < 3) return { widthMm: 8000, heightMm: 6000 }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (const p of outer) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+    return { widthMm: Math.max(1, maxX - minX), heightMm: Math.max(1, maxY - minY) }
+  }
+
   // 日本語コメント: アクティブ階変更時にテンプレート種別を同期
   useEffect(() => {
     const f = floors.find(x => x.id === activeFloorId)
@@ -123,6 +180,30 @@ export default function Page() {
   return (
     <div className="h-dvh flex flex-col">
       <TopBar onSave={onSave} onLoad={onLoad} />
+      {/* 日本語コメント: 読み込み用の非表示ファイル入力 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={async (e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          try {
+            const text = await file.text()
+            const data = parseSaveData(text)
+            const restored = data.floors.map(pf => persistFloorToState(pf))
+            setFloors(restored)
+            if (data.activeFloorId && restored.some(f => f.id === data.activeFloorId)) {
+              setActiveFloorId(data.activeFloorId)
+            } else {
+              setActiveFloorId(restored[0].id)
+            }
+          } catch (err:any) {
+            alert(`読み込みに失敗しました: ${err?.message ?? err}`)
+          }
+        }}
+      />
       <div className="flex flex-1 overflow-hidden">
           <Sidebar
             expanded={expanded}
