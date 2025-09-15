@@ -21,6 +21,14 @@ export default function Page() {
     avoidCollision: true as boolean,
   })
   const [eaves, setEaves] = useState({ enabled: false as boolean, amountMm: 600 as number, perEdge: {} as Record<number, number> })
+  // 日本語コメント: レイヤー状態（表示/ロック）。既定は全て表示・ロックなし。
+  const [layers, setLayers] = useState({
+    grid:   { visible: true, locked: false },
+    guides: { visible: true, locked: false },
+    walls:  { visible: true, locked: false },
+    eaves:  { visible: true, locked: false },
+    dims:   { visible: true, locked: false },
+  })
   const [snap, setSnap] = useState({
     enableGrid: SNAP_DEFAULTS.enableGrid,
     gridMm: SNAP_DEFAULTS.gridMm,
@@ -64,6 +72,8 @@ export default function Page() {
           onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
           eaves={eaves}
           onUpdateEaves={(patch) => setEaves(s => ({ ...s, ...patch }))}
+          layers={layers}
+          onUpdateLayers={(id, patch) => setLayers(ls => ({ ...ls, [id]: { ...ls[id as keyof typeof ls], ...patch } }))}
         />
         <main className="flex-1">
           {view === '3d' ? <ThreePlaceholder /> : (
@@ -72,6 +82,7 @@ export default function Page() {
               snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }}
               dimensionOptions={dimensions}
               eavesOptions={eaves}
+              layers={layers}
               onUpdateEaves={(patch) => setEaves(s => ({ ...s, ...patch }))}
             />
           )}

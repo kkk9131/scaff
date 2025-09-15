@@ -195,6 +195,15 @@
 2025-09-15: ズーム機能を main に統合
 - main を最新化（fetch→pull --ff-only）
 - feat/phase2-zoom-canvas を main へマージし push
+
+2025-09-15: フェーズ2「階層管理（レイヤー）」の作業ブランチを作成
+- ブランチを作成: feat/phase2-layers
+- リモート未プッシュ（必要なら push 要）
+
+2025-09-15: レイヤー機能の最小実装（表示/ロック/描画順）
+- 状態: Pageに layers を追加（grid/guides/walls/eaves/dims）
+- UI: Sidebarに「レイヤー」セクション（表示/ロックのトグル）を追加
+- Canvas: レイヤー可視で描画を分岐、ロックでヒットテスト/ドラッグを無効化
 2025-09-15: フェーズ2 ズーム機能の初期実装
 - ブランチをリモート公開（feat/phase2-zoom-canvas）
 - Canvasのホイール/キーボードズームを実装（カーソル中心、Ctrl+ホイール対応）

@@ -18,13 +18,16 @@ export const Sidebar: React.FC<{
   onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }>) => void
   eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
   onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
-}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
+  layers?: { [k in 'grid'|'guides'|'walls'|'eaves'|'dims']: { visible: boolean; locked: boolean } }
+  onUpdateLayers?: (id: 'grid'|'guides'|'walls'|'eaves'|'dims', patch: Partial<{ visible: boolean; locked: boolean }>) => void
+}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect', snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, layers, onUpdateLayers }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
   const [openTemplate, setOpenTemplate] = useState(false)
   const [openSnap, setOpenSnap] = useState(false)
   const [openDims, setOpenDims] = useState(false)
   const [openEaves, setOpenEaves] = useState(false)
+  const [openLayers, setOpenLayers] = useState(false)
   return (
     <aside className={`h-full bg-[var(--panel)] border-r border-neutral-800 transition-all duration-200 ${expanded ? 'w-56' : 'w-14'}`}>
       <div className="h-12 flex items-center justify-center border-b border-neutral-800">
@@ -244,6 +247,44 @@ export const Sidebar: React.FC<{
               />
             </div>
             <div className="text-[11px] text-neutral-400 pt-1">辺クリックで個別編集（mm）</div>
+          </div>
+        )}
+
+        {/* レイヤー */}
+        <button
+          className="w-full text-xs text-neutral-300 flex items-center justify-between bg-neutral-800/40 hover:bg-neutral-700/50 rounded px-2 py-1"
+          onClick={() => setOpenLayers(v => !v)}
+          aria-expanded={openLayers}
+          title="レイヤーの開閉"
+        >
+          <span>レイヤー</span>
+          {openLayers ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {openLayers && (
+          <div className="space-y-2 text-sm">
+            {([
+              { id: 'grid',   label: 'グリッド' },
+              { id: 'guides', label: 'ガイド' },
+              { id: 'walls',  label: '壁' },
+              { id: 'eaves',  label: '軒の出' },
+              { id: 'dims',   label: '寸法' },
+            ] as { id: 'grid'|'guides'|'walls'|'eaves'|'dims'; label: string }[]).map((row) => (
+              <div key={row.id} className="flex items-center justify-between gap-2">
+                <label className="text-neutral-300">{row.label}</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    className={`px-2 py-1 rounded ${layers?.[row.id].visible ? 'bg-green-700' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                    onClick={() => onUpdateLayers?.(row.id, { visible: !layers?.[row.id].visible })}
+                    title="表示ON/OFF"
+                  >{layers?.[row.id].visible ? '表示' : '非表示'}</button>
+                  <button
+                    className={`px-2 py-1 rounded ${layers?.[row.id].locked ? 'bg-red-700' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                    onClick={() => onUpdateLayers?.(row.id, { locked: !layers?.[row.id].locked })}
+                    title="ロックON/OFF"
+                  >{layers?.[row.id].locked ? 'ロック' : '編集可'}</button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
