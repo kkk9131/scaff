@@ -9,7 +9,7 @@ import { COLORS } from '@/ui/colors'
 import { DimensionEngine } from '@/core/dimensions/dimension_engine'
 import { offsetPolygonOuterVariable, signedArea as signedAreaModel } from '@/core/eaves/offset'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; layers?: { [k in 'grid'|'guides'|'walls'|'eaves'|'dims']: { visible: boolean; locked: boolean } }; onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void; onSnapshot?: (snap: { template: TemplateKind; rect?: typeof INITIAL_RECT; l?: typeof INITIAL_L; u?: typeof INITIAL_U; t?: typeof INITIAL_T; eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> } }) => void }> = ({ template = 'rect', snapOptions, dimensionOptions, eavesOptions, layers, onUpdateEaves, onSnapshot }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; layers?: { [k in 'grid'|'guides'|'walls'|'eaves'|'dims']: { visible: boolean; locked: boolean } }; floors?: { id: string; name?: string; heightMm?: number; template?: TemplateKind; walls?: any; eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> } }[]; activeFloorId?: string; onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void; onSnapshot?: (snap: { template: TemplateKind; rect?: typeof INITIAL_RECT; l?: typeof INITIAL_L; u?: typeof INITIAL_U; t?: typeof INITIAL_T; eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> } }) => void }> = ({ template = 'rect', snapOptions, dimensionOptions, eavesOptions, layers, floors, activeFloorId, onUpdateEaves, onSnapshot }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -42,6 +42,22 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
   useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
   useEffect(() => { dimOptsRef.current = dimensionOptions; drawRef.current?.() }, [dimensionOptions])
   useEffect(() => { eavesRef.current = eavesOptions; drawRef.current?.() }, [eavesOptions])
+  // 日本語コメント: フロア切替でアクティブ階の形状・テンプレート・軒設定を取り込む
+  useEffect(() => {
+    if (!floors || floors.length === 0) return
+    const active = floors.find(f => f.id === activeFloorId) ?? floors[0]
+    if (!active) return
+    const kind = (active.template ?? templateRef.current) as TemplateKind
+    templateRef.current = kind
+    if (active.walls) {
+      if (kind === 'rect') setRectMm(active.walls)
+      else if (kind === 'l') setLMm(active.walls)
+      else if (kind === 'u') setUMm(active.walls)
+      else if (kind === 't') setTMm(active.walls)
+    }
+    if (active.eaves) eavesRef.current = active.eaves
+    drawRef.current?.()
+  }, [floors, activeFloorId])
   // 日本語コメント: スナップショット（現在の壁形状と軒の出）を親に通知
   useEffect(() => {
     const kind = templateRef.current
@@ -118,6 +134,39 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
         return { x: s.x + panNow.x, y: s.y + panNow.y }
       })
+      // 日本語コメント: 非アクティブ階の描画（半透明、ヒットテスト対象外）
+      if (floors && floors.length > 0) {
+        for (const f of floors) {
+          if (f.id === activeFloorId) continue
+          const fk = (f.template ?? kind) as TemplateKind
+          const fPolyMm = fk === 'rect' ? outlineRect(f.walls ?? rectRef.current)
+                        : fk === 'l'   ? outlineL(f.walls ?? lRef.current)
+                        : fk === 'u'   ? outlineU(f.walls ?? uRef.current)
+                        :                outlineT(f.walls ?? tRef.current)
+          const fPolyScreen = fPolyMm.map(p => {
+            const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+            return { x: s.x + panNow.x, y: s.y + panNow.y }
+          })
+          if (layersNow.walls.visible) {
+            ctx.save()
+            ctx.globalAlpha = 0.35
+            ctx.strokeStyle = COLORS.wall
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            fPolyScreen.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y) })
+            ctx.closePath(); ctx.stroke()
+            ctx.restore()
+          }
+          if (layersNow.eaves.visible && f.eaves?.enabled) {
+            const perMm = fPolyMm.map((_, i) => f.eaves!.perEdge?.[i] ?? f.eaves!.amountMm)
+            const eMm = offsetPolygonOuterVariable(fPolyMm, perMm, { miterLimit: 8 })
+            const eSc = eMm.map(p => { const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm); return { x: s.x + panNow.x, y: s.y + panNow.y } })
+            ctx.save(); ctx.globalAlpha = 0.35; ctx.setLineDash([6,4]); ctx.strokeStyle = COLORS.wall; ctx.lineWidth = 2
+            for (let i=0;i<eSc.length;i++) { if ((perMm[i] ?? 0) <= 0) continue; const a = eSc[i], b = eSc[(i+1)%eSc.length]; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke() }
+            ctx.setLineDash([]); ctx.restore()
+          }
+        }
+      }
       // 壁: ネオンブルー（レイヤー可視時のみ）
       if (layersNow.walls.visible) {
         ctx.strokeStyle = COLORS.wall

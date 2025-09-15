@@ -146,6 +146,8 @@ export default function Page() {
               dimensionOptions={dimensions}
               eavesOptions={eaves}
               layers={layers}
+              floors={floors}
+              activeFloorId={activeFloorId}
               onSnapshot={(snap) => setCurrentSnap(snap)}
               // 未来対応: floors/activeFloorId を渡してアクティブ階のみ編集、他階は半透明表示にする
             onUpdateEaves={(patch) => setEaves(s => ({ ...s, ...patch }))}
