@@ -225,6 +225,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           const prev = (i-1+eavesPoly.length) % eavesPoly.length
           const aWall = polyScreen[i]
           const bWall = polyScreen[next]
+          if (!aWall || !bWall) continue // 安全対策: 配列長が一致しない場合はスキップ
           const pOff = eavesPoly[i]
           const qOff = eavesPoly[next]
           const isHorizontal = Math.abs(aWall.y - bWall.y) < 1e-6
@@ -259,7 +260,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
           const a0 = polyScreen[i]
           const b0 = polyScreen[next]
           const pOff = eavesPoly[i]
-          const qOff = eavesPoly[next]
+          const qOff = eavesPoly[(i+1) % eavesPoly.length]
+          if (!pOff || !qOff) continue // 安全対策: eavesPoly の要素不足時はスキップ
           const mid0 = { x: (a0.x+b0.x)/2, y: (a0.y+b0.y)/2 }
           const mid1 = { x: (pOff.x+qOff.x)/2, y: (pOff.y+qOff.y)/2 }
           const tx = (mid0.x + mid1.x) / 2
