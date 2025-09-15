@@ -62,7 +62,8 @@ export function duplicateFloor(src: FloorState, overrides: Partial<FloorState> &
     locked: overrides.locked ?? false,
     color: overrides.color ?? src.color,
     shape: JSON.parse(JSON.stringify(src.shape)),
-    eaves: overrides.eaves ?? (src.eaves ? JSON.parse(JSON.stringify(src.eaves)) : undefined),
+    // 日本語コメント: 仕様に合わせて eaves は複製しない（デフォルト無効）。
+    eaves: overrides.eaves ?? { enabled: false, amountMm: 600, perEdge: {} },
   })
 }
 

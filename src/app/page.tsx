@@ -29,7 +29,7 @@ export default function Page() {
     decimals: 0 as number,
     avoidCollision: true as boolean,
   })
-  const [eaves, setEaves] = useState({ enabled: false as boolean, amountMm: 600 as number, perEdge: {} as Record<number, number> })
+  // const [eaves, setEaves] = useState({ enabled: false as boolean, amountMm: 600 as number, perEdge: {} as Record<number, number> }) // 階層別管理に移行
   const [snap, setSnap] = useState({
     enableGrid: SNAP_DEFAULTS.enableGrid,
     gridMm: SNAP_DEFAULTS.gridMm,

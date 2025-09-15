@@ -28,7 +28,7 @@ export const Sidebar: React.FC<{
   eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
   onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
 }> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect',
-  floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor,
+  floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor, onPatchFloorEaves,
   snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
@@ -108,6 +108,7 @@ export const Sidebar: React.FC<{
                     </div>
                   </div>
                   <div className="text-[10px] text-neutral-400 mt-1">PgUp/PgDnで階切替、非アクティブ階は半透明表示</div>
+                  {/* 軒の出の編集はアクティブ階のみ（キャンバス上の辺クリック）に限定 */}
                 </div>
               ))}
             </div>

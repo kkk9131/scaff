@@ -165,6 +165,55 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         if (!isActive) { ctx.fillStyle = withAlpha(col, 0.10); ctx.fill('nonzero') }
         ctx.strokeStyle = isActive ? col : withAlpha(col, 0.55)
         ctx.stroke()
+
+        // 非アクティブ階でも軒の出ラインを点線で表示（視認性確保）。編集はしない。
+        if (!isActive && f.eaves?.enabled && (f.eaves.amountMm > 0 || (f.eaves.perEdge && Object.keys(f.eaves.perEdge).length > 0))) {
+          const n = polyMmTmp.length
+          const perMm = polyMmTmp.map((_, i) => f.eaves?.perEdge?.[i] ?? f.eaves?.amountMm ?? 0)
+          const areaModelNA = signedAreaModel(polyMmTmp)
+          const outwardNA = (vx: number, vy: number) => (areaModelNA < 0 ? { x: -vy, y: vx } : { x: vy, y: -vx })
+          type LineNA = { a:{x:number;y:number}; b:{x:number;y:number}; u:{x:number;y:number}; aOff:{x:number;y:number}; bOff:{x:number;y:number} }
+          const linesNA: LineNA[] = []
+          for (let i=0;i<n;i++) {
+            const a = polyMmTmp[i]
+            const b = polyMmTmp[(i+1)%n]
+            const v = { x: b.x - a.x, y: b.y - a.y }
+            const L = Math.hypot(v.x, v.y) || 1
+            const u = { x: v.x / L, y: v.y / L }
+            const on = outwardNA(u.x, u.y)
+            const dmm = perMm[i] || 0
+            const off = { x: on.x * dmm, y: on.y * dmm }
+            linesNA.push({ a, b, u, aOff: { x: a.x + off.x, y: a.y + off.y }, bOff: { x: b.x + off.x, y: b.y + off.y } })
+          }
+          const intersectNA = (p1:{x:number;y:number}, v1:{x:number;y:number}, p2:{x:number;y:number}, v2:{x:number;y:number}) => {
+            const denom = v1.x * v2.y - v1.y * v2.x
+            if (Math.abs(denom) < 1e-8) return null
+            const w = { x: p2.x - p1.x, y: p2.y - p1.y }
+            const t = (w.x * v2.y - w.y * v2.x) / denom
+            return { x: p1.x + v1.x * t, y: p1.y + v1.y * t }
+          }
+          ctx.setLineDash([6,4])
+          ctx.strokeStyle = withAlpha(col, 0.7)
+          ctx.lineWidth = 2
+          for (let i=0;i<n;i++) {
+            if ((perMm[i] ?? 0) <= 0) continue
+            const prev = (i+n-1)%n, next = (i+1)%n
+            let start = linesNA[i].aOff
+            let end = linesNA[i].bOff
+            if ((perMm[prev] ?? 0) > 0) {
+              const ip = intersectNA(linesNA[prev].aOff, linesNA[prev].u, linesNA[i].aOff, linesNA[i].u); if (ip) start = ip
+            }
+            if ((perMm[next] ?? 0) > 0) {
+              const ip = intersectNA(linesNA[i].aOff, linesNA[i].u, linesNA[next].aOff, linesNA[next].u); if (ip) end = ip
+            }
+            const s0 = modelToScreen(start, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+            const e0 = modelToScreen(end, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+            const s = { x: s0.x + panNow.x, y: s0.y + panNow.y }
+            const e = { x: e0.x + panNow.x, y: e0.y + panNow.y }
+            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke()
+          }
+          ctx.setLineDash([])
+        }
       }
 
       // 以降はアクティブ階の編集/寸法/軒の出を処理
