@@ -142,7 +142,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
     const globalBottomY = toS({ x: 0, y: minY }).y
 
     // 階ごとの各面のエッジ区間（スクリーン座標での投影）を抽出
-    type Seg = { start: number; end: number; lenMm: number }
+    type Seg = { start: number; end: number; lenMm: number; edge: number }
     type FloorSideSegs = { floor: FloorState; segs: Seg[] }
     const bySide: Record<Side, FloorSideSegs[]> = { top: [], bottom: [], left: [], right: [] }
     const sideEavesMaxMm: Record<Side, number> = { top: 0, bottom: 0, left: 0, right: 0 }
@@ -174,11 +174,11 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
         if (side === 'top' || side === 'bottom') {
           const start = Math.min(sa.x, sb.x)
           const end = Math.max(sa.x, sb.x)
-          sideSegs[side].push({ start, end, lenMm: L })
+          sideSegs[side].push({ start, end, lenMm: L, edge: i })
         } else {
           const start = Math.min(sa.y, sb.y)
           const end = Math.max(sa.y, sb.y)
-          sideSegs[side].push({ start, end, lenMm: L })
+          sideSegs[side].push({ start, end, lenMm: L, edge: i })
         }
       }
       ;(['top','bottom','left','right'] as Side[]).forEach(s => {
@@ -367,6 +367,9 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
     bySide.bottom.forEach((row, i) => drawRowTopBottom('bottom', bottomBase + i*rowGapPx, globalLeftX, globalRightX, row, i, placedBottom))
     bySide.left.forEach((row, i) => drawRowLeftRight('left', leftBase - i*rowGapPx, globalTopY, globalBottomY, row, i, placedLeft))
     bySide.right.forEach((row, i) => drawRowLeftRight('right', rightBase + i*rowGapPx, globalTopY, globalBottomY, row, i, placedRight))
+
+    // 日本語コメント: 面別の「軒の出」専用基準線（壁寸法の1行外）— 1本線の分割表現で表示
+    // 日本語コメント: 軒の出専用の寸法行は一旦撤去（視認性改善のため）。
   }, [floors, zoom])
 
   return (
