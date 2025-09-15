@@ -17,6 +17,8 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dimEngineRef = useRef(new DimensionEngine())
   const [zoom, setZoom] = useState(1)
+  // 日本語コメント: プレビュー内の軒の出の表示/非表示トグル
+  const [showEaves, setShowEaves] = useState(true)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -84,7 +86,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
       ctx.beginPath(); poly.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y) }); ctx.closePath(); ctx.stroke()
 
       // 軒の出: 破線（視認用に半透明）
-      if (f.eaves?.enabled) {
+      if (showEaves && f.eaves?.enabled) {
         const amount = Math.max(f.eaves.amountMm || 0, ...Object.values(f.eaves.perEdge ?? {}))
         if (amount > 0) {
           ctx.setLineDash([6, 4])
@@ -123,7 +125,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
       }
 
       // 日本語コメント: 軒の出の値を、壁ラインと軒ラインの間（中間）に小さな丸で表示
-      if (f.eaves?.enabled) {
+      if (showEaves && f.eaves?.enabled) {
         const n = poly.length
         // 画面座標での多角形面積（外側法線の向き判定）
         let areaS = 0; for (let i=0;i<n;i++){ const a=poly[i], b=poly[(i+1)%n]; areaS += a.x*b.y - a.y*b.x }
@@ -427,7 +429,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
 
     // 日本語コメント: 面別の「軒の出」専用基準線（壁寸法の1行外）— 1本線の分割表現で表示
     // 日本語コメント: 軒の出専用の寸法行は一旦撤去（視認性改善のため）。
-  }, [floors, zoom])
+  }, [floors, zoom, showEaves])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -441,6 +443,12 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
             <div className="w-16 text-center text-sm text-neutral-300">{Math.round(zoom*100)}%</div>
             <button className="px-2 py-1 text-sm border border-neutral-700 rounded hover:bg-neutral-800" onClick={() => setZoom(z => Math.min(8, z*1.1))}>+</button>
             <button className="ml-2 px-2 py-1 text-sm border border-neutral-700 rounded hover:bg-neutral-800" onClick={() => setZoom(1)}>フィット</button>
+            <button
+              className="ml-2 px-2 py-1 text-sm border border-neutral-700 rounded hover:bg-neutral-800"
+              aria-pressed={showEaves}
+              onClick={() => setShowEaves(v => !v)}
+              title="軒の出の表示/非表示"
+            >{showEaves ? '軒の出: 表示中' : '軒の出: 非表示'}</button>
             <button className="ml-3 text-sm text-neutral-300 hover:text-white" onClick={onClose}>閉じる</button>
           </div>
         </div>
