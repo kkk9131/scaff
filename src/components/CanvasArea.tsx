@@ -146,6 +146,13 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
         const lower = floors.filter(f => f.id !== activeFloorId && parseF(f.name) < activeNum)
         const upper = floors.filter(f => f.id !== activeFloorId && parseF(f.name) >= activeNum)
 
+        // 日本語コメント: フロアごとの配色（半透明の上でも判別しやすいビビッド系）
+        const PALETTE = ['#ff6b6b', '#ffd166', '#06d6a0', '#4cc9f0', '#f72585', '#f4a261', '#43aa8b', '#90be6d', '#b5179e']
+        const colorOf = (id: string) => {
+          const idx = floors.findIndex(x => x.id === id)
+          return PALETTE[idx % PALETTE.length]
+        }
+
         const drawFloor = (f: NonNullable<typeof floors[number]>) => {
           const fk = (f.template ?? kind) as TemplateKind
           const fPolyMm = fk === 'rect' ? outlineRect(f.walls ?? rectRef.current)
@@ -157,7 +164,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
             return { x: s.x + panNow.x, y: s.y + panNow.y }
           })
           if (layersNow.walls.visible) {
-            ctx.save(); ctx.globalAlpha = 0.35; ctx.strokeStyle = COLORS.wall; ctx.lineWidth = 2
+            ctx.save(); ctx.globalAlpha = 0.55; ctx.strokeStyle = colorOf(f.id); ctx.lineWidth = 2.5
             ctx.beginPath(); fPolyScreen.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y) })
             ctx.closePath(); ctx.stroke(); ctx.restore()
           }
@@ -165,7 +172,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; snapOptions?: SnapO
             const perMm = fPolyMm.map((_, i) => f.eaves!.perEdge?.[i] ?? f.eaves!.amountMm)
             const eMm = offsetPolygonOuterVariable(fPolyMm, perMm, { miterLimit: 8 })
             const eSc = eMm.map(p => { const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm); return { x: s.x + panNow.x, y: s.y + panNow.y } })
-            ctx.save(); ctx.globalAlpha = 0.35; ctx.setLineDash([6,4]); ctx.strokeStyle = COLORS.wall; ctx.lineWidth = 2
+            ctx.save(); ctx.globalAlpha = 0.55; ctx.setLineDash([6,4]); ctx.strokeStyle = colorOf(f.id); ctx.lineWidth = 2
             for (let i=0;i<eSc.length;i++) { if ((perMm[i] ?? 0) <= 0) continue; const a = eSc[i], b = eSc[(i+1)%eSc.length]; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke() }
             ctx.setLineDash([]); ctx.restore()
           }
