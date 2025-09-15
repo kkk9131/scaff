@@ -27,10 +27,9 @@ export const Sidebar: React.FC<{
   onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }>) => void
   eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
   onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
-  onResetEditor?: () => void
 }> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect',
   floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor,
-  snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, onResetEditor }) => {
+  snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
   // 日本語コメント: 左サイドバー。セクションごとに開閉トグルを持つ（デフォルト閉）
   const [openView, setOpenView] = useState(false)
   const [openTemplate, setOpenTemplate] = useState(false)
@@ -329,24 +328,7 @@ export const Sidebar: React.FC<{
           </div>
         )}
 
-        {/* データ（初期化） */}
-        <button
-          className="w-full text-xs text-neutral-300 flex items-center justify-between bg-neutral-800/40 hover:bg-neutral-700/50 rounded px-2 py-1"
-          onClick={() => {}}
-          aria-expanded={true}
-          title="データ操作"
-        >
-          <span>データ</span>
-          <ChevronDown size={16} />
-        </button>
-        <div className="space-y-2 text-sm">
-          <button
-            className="w-full px-2 py-1 text-xs rounded bg-red-700 hover:bg-red-600"
-            onClick={() => onResetEditor?.()}
-            title="全データを初期状態に戻す"
-          >エディタを初期化</button>
-          <div className="text-[11px] text-neutral-400">JSONの保存は上部バーから可能です。</div>
-        </div>
+        {/* データセクションはMVPでは上部バーに集約 */}
       </div>
     </aside>
   )

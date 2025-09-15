@@ -191,7 +191,7 @@ export default function Page() {
 
   return (
     <div className="h-dvh flex flex-col">
-      <TopBar onSave={onSave} onLoad={onLoad} />
+      <TopBar onSave={onSave} onLoad={onLoad} onReset={resetEditor} />
       {/* 日本語コメント: 読み込み用の非表示ファイル入力 */}
       <input
         ref={fileInputRef}
@@ -241,9 +241,8 @@ export default function Page() {
             onDuplicateFloor={duplicateActiveFloor}
             onRemoveFloor={removeActiveFloor}
             onPatchFloor={patchFloor}
-          onRenameFloor={renameFloor}
-          onResetEditor={resetEditor}
-          snap={snap}
+            onRenameFloor={renameFloor}
+            snap={snap}
           onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
             dimensions={dimensions}
             onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
