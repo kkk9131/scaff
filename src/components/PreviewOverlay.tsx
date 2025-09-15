@@ -122,6 +122,63 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
         }
       }
 
+      // 日本語コメント: 軒の出の値を、壁ラインと軒ラインの間（中間）に小さな丸で表示
+      if (f.eaves?.enabled) {
+        const n = poly.length
+        // 画面座標での多角形面積（外側法線の向き判定）
+        let areaS = 0; for (let i=0;i<n;i++){ const a=poly[i], b=poly[(i+1)%n]; areaS += a.x*b.y - a.y*b.x }
+        const outward = (ux:number, uy:number) => (areaS < 0 ? { x: -uy, y: ux } : { x: uy, y: -ux })
+        for (let i=0;i<n;i++) {
+          const a = poly[i]
+          const b = poly[(i+1)%n]
+          const dv = { x: b.x - a.x, y: b.y - a.y }
+          const L = Math.hypot(dv.x, dv.y); if (L < 1e-6) continue
+          const u = { x: dv.x / L, y: dv.y / L }
+          const on = outward(u.x, u.y)
+          const dmm = f.eaves?.perEdge?.[i] ?? f.eaves?.amountMm ?? 0
+          if (!dmm || dmm <= 0) continue
+          const eavesPx = dmm * pxPerMm
+          if (eavesPx < 12) continue // 狭い場合は省略して視認性を確保
+          // 配置位置（壁→軒の中間点付近、最小余白考慮）
+          const baseMid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 }
+          const minGap = 4
+          const placeDist = Math.min(Math.max(eavesPx * 0.5, minGap), Math.max(eavesPx - 6, minGap))
+          let cx = baseMid.x + on.x * placeDist
+          let cy = baseMid.y + on.y * placeDist
+          // テキスト（数値のみ、単位省略）
+          const NS = 'http://www.w3.org/2000/svg'
+          const tx = document.createElementNS(NS, 'text') as SVGTextElement
+          tx.textContent = `${Math.round(dmm)}`
+          tx.setAttribute('x', String(cx))
+          tx.setAttribute('y', String(cy))
+          tx.setAttribute('fill', withAlpha(col, 0.95))
+          tx.setAttribute('font-size', '10')
+          tx.setAttribute('text-anchor', 'middle')
+          tx.setAttribute('dominant-baseline', 'middle')
+          svg.appendChild(tx)
+          const bb = tx.getBBox()
+          let r = Math.ceil(Math.max(7, Math.max(bb.width, bb.height) * 0.5 + 3))
+          const maxR = Math.max(8, (eavesPx - 4) * 0.5)
+          if (r > maxR) {
+            r = Math.floor(maxR)
+            const adj = Math.max(r + 3, placeDist - 3)
+            cx = baseMid.x + on.x * adj
+            cy = baseMid.y + on.y * adj
+            tx.setAttribute('x', String(cx))
+            tx.setAttribute('y', String(cy))
+          }
+          if (r < 6) { svg.removeChild(tx); continue }
+          const circle = document.createElementNS(NS, 'circle')
+          circle.setAttribute('cx', String(cx))
+          circle.setAttribute('cy', String(cy))
+          circle.setAttribute('r', String(r))
+          circle.setAttribute('fill', 'rgba(0,0,0,0.35)')
+          circle.setAttribute('stroke', withAlpha(col, 0.8))
+          circle.setAttribute('stroke-width', '1')
+          svg.insertBefore(circle, tx)
+        }
+      }
+
     })
 
     // 日本語コメント: 寸法線（各面を「全体外側」に統一）。
