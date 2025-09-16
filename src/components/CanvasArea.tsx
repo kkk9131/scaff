@@ -5,6 +5,7 @@ import { TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_
 import { lengthToScreen, modelToScreen, screenToModel } from '@/core/transform'
 import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
 import { COLORS, withAlpha } from '@/ui/colors'
+import { pickFloorColorsByName } from '@/ui/palette'
 import type { FloorState } from '@/core/floors'
 // 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
 import { DimensionEngine } from '@/core/dimensions/dimension-engine'
@@ -237,9 +238,14 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       // 最小対応: アクティブ階の形状は現在のテンプレ状態を使用。他階は shape 情報があれば利用し、無ければ同形状とする。
       const fs = (Array.isArray((floorsRef.current as any)) && (floorsRef.current as any).length > 0) ? (floorsRef.current as any as FloorState[]) : []
       const sorted = [...fs].sort((a,b)=> a.elevationMm - b.elevationMm)
-      for (const f of sorted) {
+      let activePalette = { walls: COLORS.wall, eaves: COLORS.wall }
+      for (let idx = 0; idx < sorted.length; idx++) {
+        const f = sorted[idx]
         if (!f.visible) continue
         const isActive = activeFloorIdRef.current ? (f.id === activeFloorIdRef.current) : true
+        const palette = pickFloorColorsByName(f.name, idx)
+        const wallColor = palette.walls ?? COLORS.wall
+        const eavesColor = palette.eaves ?? wallColor
         // 非アクティブ階は常にその階自身の shape を使用（アクティブ階の内部状態には依存しない）
         let polyMmTmp
         if (isActive) {
@@ -262,7 +268,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
           const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
           return { x: s.x + panNow.x, y: s.y + panNow.y }
         })
-        const col = f.color?.walls ?? COLORS.wall
+        const col = wallColor
         // 線種は共通（実線）。非アクティブは色を薄くし、内側をごく薄く塗って重なっても視認できるようにする。
         ctx.setLineDash([])
         ctx.lineWidth = 2
@@ -275,10 +281,14 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         if (!isActive && f.eaves?.enabled && (f.eaves.amountMm > 0 || (f.eaves.perEdge && Object.keys(f.eaves.perEdge).length > 0))) {
           const perMm = polyMmTmp.map((_, i) => f.eaves?.perEdge?.[i] ?? f.eaves?.amountMm ?? 0)
           ctx.setLineDash([6,4])
-          ctx.strokeStyle = withAlpha(col, 0.7)
+          ctx.strokeStyle = withAlpha(eavesColor, 0.7)
           ctx.lineWidth = 2
           drawEavesDashed(ctx, polyMmTmp as any, polyScreenTmp as any, perMm, col, { width: cssBounds.width, height: cssBounds.height }, pxPerMm, panNow, false)
           ctx.setLineDash([])
+        }
+
+        if (isActive) {
+          activePalette = { walls: wallColor, eaves: eavesColor }
         }
       }
 
@@ -300,10 +310,11 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         const perMm = polyMm.map((_, i) => eaves.perEdge?.[i] ?? eaves.amountMm)
         const n = polyMm.length
         const areaModel = signedAreaModel(polyMm)
-        ctx.strokeStyle = COLORS.wall
+        const activeWallColor = activePalette.walls ?? COLORS.wall
+        ctx.strokeStyle = activeWallColor
         ctx.setLineDash([6, 4])
         ctx.lineWidth = 2
-        drawEavesDashed(ctx, polyMm as any, polyScreen as any, perMm, COLORS.wall, { width: cssBounds.width, height: cssBounds.height }, pxPerMm, panNow, true)
+        drawEavesDashed(ctx, polyMm as any, polyScreen as any, perMm, activeWallColor, { width: cssBounds.width, height: cssBounds.height }, pxPerMm, panNow, true)
         ctx.setLineDash([])
 
         // ラベル配置（各辺中点とオフセット線分中点の間）
@@ -1097,12 +1108,13 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
 
   return (
     <div className="w-full h-full relative">
-      <canvas ref={ref} className="w-full h-full bg-[#0f1113]" />
+      <canvas ref={ref} className="w-full h-full bg-surface-canvas" />
       <svg ref={svgRef} className="absolute inset-0 pointer-events-none" />
-      {/* 日本語コメント: ズームUI（右上）。100%表示と±ボタン。*/}
-      <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/40 text-white rounded px-2 py-1 select-none">
+      
+      {/* モダンなズームコントロール */}
+      <div className="absolute top-4 right-4 flex items-center gap-2 bg-surface-panel/95 backdrop-blur-sm border border-border-default rounded-lg px-3 py-2 shadow-elevated select-none">
         <button
-          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+          className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary hover:text-text-primary transition-all duration-200 font-mono"
           onClick={() => {
             const el = ref.current!
             const css = el.getBoundingClientRect()
@@ -1119,10 +1131,17 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
             zoomRef.current = nextZoom; panRef.current = newPan
             setZoom(nextZoom); setPan(newPan)
           }}
-        >-</button>
-        <div className="min-w-14 text-center tabular-nums">{Math.round(zoom * 100)}%</div>
+          title="ズームアウト"
+        >
+          <span className="text-sm">−</span>
+        </button>
+        
+        <div className="min-w-16 text-center text-sm font-medium text-text-primary tabular-nums">
+          {Math.round(zoom * 100)}%
+        </div>
+        
         <button
-          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+          className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary hover:text-text-primary transition-all duration-200 font-mono"
           onClick={() => {
             const el = ref.current!
             const css = el.getBoundingClientRect()
@@ -1139,12 +1158,25 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
             zoomRef.current = nextZoom; panRef.current = newPan
             setZoom(nextZoom); setPan(newPan)
           }}
-        >+</button>
+          title="ズームイン"
+        >
+          <span className="text-sm">＋</span>
+        </button>
+        
+        <div className="w-px h-6 bg-border-default"></div>
+        
         <button
-          className="ml-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20"
-          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); zoomRef.current = 1; panRef.current = { x: 0, y: 0 } }}
-          title="表示をリセット"
-        >100%</button>
+          className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary hover:text-text-primary transition-all duration-200"
+          onClick={() => { 
+            setZoom(1); 
+            setPan({ x: 0, y: 0 }); 
+            zoomRef.current = 1; 
+            panRef.current = { x: 0, y: 0 } 
+          }}
+          title="表示をリセット（100%にズーム）"
+        >
+          リセット
+        </button>
       </div>
     </div>
   )
