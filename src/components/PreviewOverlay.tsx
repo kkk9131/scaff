@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { X, ZoomIn, ZoomOut, RotateCcw, Eye, EyeOff } from 'lucide-react'
 import type { FloorState } from '@/core/floors'
-import { outlineL, outlineRect, outlineT, outlineU } from '@/core/model'
+import { outlineL, outlineRect, outlineT, outlineU, outlinePoly } from '@/core/model'
 import { DEFAULT_PX_PER_MM } from '@/core/units'
 import { modelToScreen } from '@/core/transform'
 import { COLORS, withAlpha } from '@/ui/colors'
+import { pickFloorColorsByName } from '@/ui/palette'
 import { DimensionEngine } from '@/core/dimensions/dimension-engine'
 import { outwardNormalModel, outwardNormalScreen, signedAreaScreen, signedArea2D } from '@/core/geometry/orientation'
 import { intersectLines } from '@/core/geometry/lines'
@@ -42,7 +44,8 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
       const pts = k === 'rect' ? outlineRect(d)
         : k === 'l' ? outlineL(d)
         : k === 'u' ? outlineU(d)
-        : outlineT(d)
+        : k === 't' ? outlineT(d)
+        : outlinePoly(d)
       polysMm.push({ floor: f, pts })
     }
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
@@ -81,7 +84,9 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
       })
 
       // 壁: 実線、フロア色
-      const col = f.color?.walls ?? COLORS.wall
+      const palette = pickFloorColorsByName(f.name, idx)
+      const col = palette.walls ?? COLORS.wall
+      const eavesColor = palette.eaves ?? col
       ctx.strokeStyle = col
       ctx.lineWidth = 2
       ctx.setLineDash([])
@@ -92,7 +97,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
         const amount = Math.max(f.eaves.amountMm || 0, ...Object.values(f.eaves.perEdge ?? {}))
         if (amount > 0) {
           ctx.setLineDash([6, 4])
-          ctx.strokeStyle = withAlpha(col, 0.8)
+          ctx.strokeStyle = withAlpha(eavesColor, 0.8)
           ctx.lineWidth = 2
           // 簡易: 各辺の外側法線に一定量オフセットして繋ぐ（個別指定はここでは最大値で近似）
           const n = pts.length
@@ -149,7 +154,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
           tx.textContent = `${Math.round(dmm)}`
           tx.setAttribute('x', String(cx))
           tx.setAttribute('y', String(cy))
-          tx.setAttribute('fill', withAlpha(col, 0.95))
+          tx.setAttribute('fill', withAlpha(eavesColor, 0.95))
           tx.setAttribute('font-size', '10')
           tx.setAttribute('text-anchor', 'middle')
           tx.setAttribute('dominant-baseline', 'middle')
@@ -171,7 +176,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
           circle.setAttribute('cy', String(cy))
           circle.setAttribute('r', String(r))
           circle.setAttribute('fill', 'rgba(0,0,0,0.35)')
-          circle.setAttribute('stroke', withAlpha(col, 0.8))
+          circle.setAttribute('stroke', withAlpha(eavesColor, 0.8))
           circle.setAttribute('stroke-width', '1')
           svg.insertBefore(circle, tx)
         }
@@ -250,7 +255,8 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
       rowIndex: number,
       placedGlobal: DOMRect[]
     ) => {
-      const col = row.floor.color?.walls ?? COLORS.helper
+      const palette = pickFloorColorsByName(row.floor.name, row.order)
+      const col = palette.walls ?? COLORS.helper
       // 階ラベル
       const label = document.createElementNS(NS, 'text') as SVGTextElement
       label.textContent = row.floor.name
@@ -328,7 +334,8 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
       rowIndex: number,
       placedGlobal: DOMRect[]
     ) => {
-      const col = row.floor.color?.walls ?? COLORS.helper
+      const palette = pickFloorColorsByName(row.floor.name, row.order)
+      const col = palette.walls ?? COLORS.helper
       // 階ラベル
       const label = document.createElementNS(NS, 'text') as SVGTextElement
       label.textContent = row.floor.name
@@ -427,32 +434,94 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
   }, [floors, zoom, showEaves])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
       {/* 背面クリックで閉じる */}
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-[var(--panel)] border border-neutral-800 rounded-md shadow-xl w-[min(96vw,1600px)] h-[min(92vh,1000px)] overflow-hidden">
-        <div className="h-10 flex items-center justify-between px-3 border-b border-neutral-800 select-none">
-          <div className="font-medium">プレビュー（全階層）</div>
-          <div className="flex items-center gap-2">
-            <button className="px-2 py-1 text-sm border border-neutral-700 rounded hover:bg-neutral-800" onClick={() => setZoom(z => Math.max(0.2, z/1.1))}>-</button>
-            <div className="w-16 text-center text-sm text-neutral-300">{Math.round(zoom*100)}%</div>
-            <button className="px-2 py-1 text-sm border border-neutral-700 rounded hover:bg-neutral-800" onClick={() => setZoom(z => Math.min(8, z*1.1))}>+</button>
-            <button className="ml-2 px-2 py-1 text-sm border border-neutral-700 rounded hover:bg-neutral-800" onClick={() => setZoom(1)}>フィット</button>
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative bg-surface-panel/98 backdrop-blur-sm border border-border-default rounded-2xl shadow-elevated w-[min(96vw,1600px)] h-[min(92vh,1000px)] overflow-hidden animate-scale-in">
+        {/* モダンなヘッダー */}
+        <div className="h-14 flex items-center justify-between px-6 border-b border-border-default select-none bg-surface-elevated/50">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-accent-500 to-accent-600 rounded-lg flex items-center justify-center shadow-glow">
+              <Eye className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-text-primary">全階層プレビュー</h2>
+              <p className="text-xs text-text-tertiary">建築図面の統合表示</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {/* ズームコントロール */}
+            <div className="flex items-center gap-2 bg-surface-elevated/80 backdrop-blur-sm border border-border-default rounded-lg px-3 py-2">
+              <button 
+                className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-hover hover:bg-surface-elevated border border-border-subtle text-text-tertiary hover:text-text-primary transition-colors duration-200" 
+                onClick={() => setZoom(z => Math.max(0.2, z/1.1))}
+                title="ズームアウト"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              
+              <div className="min-w-16 text-center text-sm font-medium text-text-primary tabular-nums">
+                {Math.round(zoom*100)}%
+              </div>
+              
+              <button 
+                className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-hover hover:bg-surface-elevated border border-border-subtle text-text-tertiary hover:text-text-primary transition-colors duration-200" 
+                onClick={() => setZoom(z => Math.min(8, z*1.1))}
+                title="ズームイン"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              
+              <div className="w-px h-6 bg-border-default mx-1"></div>
+              
+              <button 
+                className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-hover hover:bg-surface-elevated border border-border-subtle text-text-tertiary hover:text-text-primary transition-colors duration-200" 
+                onClick={() => setZoom(1)}
+                title="表示をリセット（フィット）"
+              >
+                フィット
+              </button>
+            </div>
+            
+            {/* 軒の出トグル */}
             <button
-              className="ml-2 px-2 py-1 text-sm border border-neutral-700 rounded hover:bg-neutral-800"
-              aria-pressed={showEaves}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-all duration-200 ${
+                showEaves 
+                  ? 'bg-success/10 border-success/30 text-success hover:bg-success/20' 
+                  : 'bg-surface-elevated hover:bg-surface-hover border-border-default text-text-secondary hover:text-text-primary'
+              }`}
               onClick={() => setShowEaves(v => !v)}
-              title="軒の出の表示/非表示"
-            >{showEaves ? '軒の出: 表示中' : '軒の出: 非表示'}</button>
-            <button className="ml-3 text-sm text-neutral-300 hover:text-white" onClick={onClose}>閉じる</button>
+              title="軒の出の表示/非表示切替"
+            >
+              {showEaves ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              軒の出
+            </button>
+            
+            <div className="w-px h-8 bg-border-default"></div>
+            
+            {/* 閉じるボタン */}
+            <button 
+              className="w-10 h-10 flex items-center justify-center rounded-lg bg-surface-hover hover:bg-surface-elevated text-text-tertiary hover:text-text-primary border border-border-default transition-colors duration-200" 
+              onClick={onClose}
+              title="プレビューを閉じる"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
+        {/* キャンバスエリア */}
         <div
-          className="relative w-full h-[calc(100%-2.5rem)]"
+          className="relative w-full h-[calc(100%-3.5rem)] bg-surface-canvas rounded-b-2xl overflow-hidden"
           onWheel={(e) => { e.preventDefault(); const dir = e.deltaY > 0 ? -1 : 1; setZoom(z => Math.max(0.2, Math.min(8, z * (dir>0 ? 1.05 : 1/1.05)))) }}
         >
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
           <svg ref={svgRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          
+          {/* コーナー情報表示 */}
+          <div className="absolute bottom-4 left-4 bg-surface-panel/90 backdrop-blur-sm border border-border-default rounded-lg px-3 py-2 text-xs text-text-tertiary">
+            💡 マウスホイールでズーム
+          </div>
         </div>
       </div>
     </div>
