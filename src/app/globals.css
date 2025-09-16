@@ -2,14 +2,112 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 2026年モダンデザイン：グレーベースの建築プロ仕様CSS変数 */
 :root {
-  --bg: #111315;
-  --panel: #1b1f23;
+  /* レガシー変数（下位互換） */
+  --bg: #0f1113;
+  --panel: #18191b;
+  
+  /* モダンカラーシステム（Tailwind設定と連動） */
+  --surface-canvas: #0f1113;
+  --surface-panel: #18191b;
+  --surface-elevated: #1f2023;
+  --surface-hover: #2a2b2e;
+  
+  --border-default: #2a2b2e;
+  --border-subtle: #1a1b1e;
+  --border-accent: #3b82f6;
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-muted: #64748b;
+  
+  --accent-500: #3b82f6;
+  --accent-600: #2563eb;
+  
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
 }
 
-html, body, #__next { height: 100%; }
-body { background: var(--bg); color: white; }
+html, body, #__next { 
+  height: 100%; 
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
 
+body { 
+  background: var(--surface-canvas); 
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* モダンスクロールバー */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* 入力フィールドのスタイル統一 */
+input[type="number"],
+input[type="text"],
+select {
+  background: #020617 !important;
+  color: #f8fafc !important;
+  border: 1px solid #475569 !important;
+}
+
+input[type="number"]:focus,
+input[type="text"]:focus,
+select:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* プレースホルダーテキストのスタイル */
+input::placeholder {
+  color: #64748b !important;
+}
+
+/* フォーカス状態の統一 */
+*:focus-visible {
+  outline: 2px solid var(--accent-500);
+  outline-offset: 2px;
+}
+
+/* 選択状態のスタイル */
+::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: var(--text-primary);
+}
+
+/* アニメーション用のユーティリティクラス */
+.glass-effect {
+  backdrop-filter: blur(12px);
+  background: rgba(24, 25, 27, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glow-accent {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+/* レガシーエフェクト（下位互換） */
 .neon {
-  text-shadow: 0 0 8px rgba(57, 255, 136, 0.6);
+  text-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
 }
