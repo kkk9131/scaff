@@ -29,7 +29,7 @@
 ## インターフェース / Interface
 - コア: `src/core/dimensions/`
   - `dimension_model.ts`: モデル定義（Point, Edge, DimensionLine）
-  - `dimension_engine.ts`: 配列の Edge から寸法線を生成、または `computeForPolygon(points)` で向き自動判定
+  - `dimension-engine.ts`: 配列の Edge から寸法線を生成、または `computeForPolygon(points)` で向き自動判定
  - テスト: `tests/core/dimensions/dimension_engine.spec.ts`（雛形）
  
 ## 次ステップ / Next Steps
