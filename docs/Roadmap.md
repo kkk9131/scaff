@@ -8,17 +8,17 @@ This mirrors `docs/開発ロードマップ.md` and is kept in sync. Japanese is
 - Next.js + TS, Tailwind, basic UI (top bar, sidebar, canvas)
 
 ### Phase 2: 2D Editor
-- Templates: Rect / L / U / T
+- Templates: Rect / L / U / T + convert to free-form polygon for arbitrary vertex edits
 - Dimensioning: click edges to enter mm; always-visible dimensions (outside), collision avoidance
 - Vertex drag with snap (orthogonal, grid)
 - Styles: walls neon-blue, helpers gray
 - Eaves Overhang (outer offset only), dashed, per-edge edit via click
-- Zoom: wheel/keys/UI, cursor-centered
+- Zoom & pan: wheel/keys/UI, cursor-centered zoom, click+scroll/trackpad pan
 - Floors (multi-floor management)
   - List: add/delete/duplicate/rename; active switching (row/▲▼/PgUp/PgDn)
   - Heights: `elevationMm` (floor Z), `heightMm` (story)
   - Editing: active-only; others locked and rendered lighter; multiple floors overlaid (lower→higher)
-  - Colors: per-floor palette; duplicate rotates color; shapes are deep-copied (independent)
+  - Colors: auto palette per floor name/level (consistent across views); shapes deep-copied for independence
   - Eaves: stored per floor; editing on the active floor only; non-active dashed display
   - 3D prep: extrude semantics zBottom=`elevationMm`, zTop=`elevationMm+heightMm`
 
