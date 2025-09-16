@@ -2,6 +2,7 @@
 // 方針: 辺ベクトルに平行な線分を、法線方向にオフセットして配置する
 
 import { DimensionLine, Edge, Point, Units, distance } from './dimension_model';
+import { signedArea2D } from '../geometry/orientation';
 
 export type DimensionEngineOptions = {
   // 外側の定義: 既定は「左法線」を外側とみなす
@@ -96,21 +97,9 @@ export class DimensionEngine {
       const b = points[(i + 1) % points.length];
       edges.push({ a, b, id: `e${i}` });
     }
-    const orientation = signedArea(points);
+    const orientation = signedArea2D(points as any);
     // 署名付き面積 > 0 を CCW とみなし、外側=右法線、< 0 を CW とみなし、外側=左法線
     const outsideIsLeftNormal = orientation < 0; // CW => left が外側 / CCW => right が外側
     return this.computeForEdges(edges, { ...opts, outsideIsLeftNormal });
   }
-}
-
-// 日本語コメント: 多角形の署名付き面積（画面座標系）
-// 結果 >0: CCW, <0: CW, =0: 退化
-export function signedArea(points: Point[]): number {
-  let a = 0;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const q = points[(i + 1) % points.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a / 2;
 }

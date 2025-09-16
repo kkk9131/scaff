@@ -4,7 +4,9 @@ import { outlineL, outlineRect, outlineT, outlineU } from '@/core/model'
 import { DEFAULT_PX_PER_MM } from '@/core/units'
 import { modelToScreen } from '@/core/transform'
 import { COLORS, withAlpha } from '@/ui/colors'
-import { DimensionEngine } from '@/core/dimensions/dimension_engine'
+import { DimensionEngine } from '@/core/dimensions/dimension-engine'
+import { outwardNormalModel, outwardNormalScreen, signedAreaScreen, signedArea2D } from '@/core/geometry/orientation'
+import { intersectLines } from '@/core/geometry/lines'
 
 type Props = {
   floors: FloorState[]
@@ -94,28 +96,23 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
           ctx.lineWidth = 2
           // 簡易: 各辺の外側法線に一定量オフセットして繋ぐ（個別指定はここでは最大値で近似）
           const n = pts.length
-          const area = (() => { let s = 0; for (let i=0;i<n;i++){ const a=pts[i], b=pts[(i+1)%n]; s += a.x*b.y - a.y*b.x } return s/2 })()
-          const outward = (vx:number, vy:number) => area < 0 ? { x: -vy, y: vx } : { x: vy, y: -vx }
-          const segs: { a:{x:number;y:number}; b:{x:number;y:number}; u:{x:number;y:number}; aOff:{x:number;y:number}; bOff:{x:number;y:number} }[] = []
-          for (let i=0;i<n;i++) {
+          const area = signedArea2D(pts)
+          // 各辺一律 amount を適用（従来の見た目を維持）
+          const per = Array.from({ length: n }, () => amount)
+          const lines = per.map((_, i) => {
             const a = pts[i], b = pts[(i+1)%n]
             const v = { x: b.x - a.x, y: b.y - a.y }
             const L = Math.hypot(v.x, v.y) || 1
             const u = { x: v.x/L, y: v.y/L }
-            const on = outward(u.x, u.y)
+            const on = outwardNormalModel(u, area)
             const off = { x: on.x * amount, y: on.y * amount }
-            segs.push({ a, b, u, aOff: { x: a.x + off.x, y: a.y + off.y }, bOff: { x: b.x + off.x, y: b.y + off.y } })
-          }
-          const intersect = (p1:{x:number;y:number}, v1:{x:number;y:number}, p2:{x:number;y:number}, v2:{x:number;y:number}) => {
-            const den = v1.x*v2.y - v1.y*v2.x; if (Math.abs(den) < 1e-8) return null
-            const w = { x: p2.x - p1.x, y: p2.y - p1.y }; const t = (w.x*v2.y - w.y*v2.x) / den
-            return { x: p1.x + v1.x*t, y: p1.y + v1.y*t }
-          }
+            return { a, b, u, aOff: { x: a.x + off.x, y: a.y + off.y }, bOff: { x: b.x + off.x, y: b.y + off.y } }
+          })
           for (let i=0;i<n;i++) {
-            let sA = segs[i].aOff, sB = segs[i].bOff
+            let sA = lines[i].aOff, sB = lines[i].bOff
             const prev = (i+n-1)%n, next = (i+1)%n
-            const ip1 = intersect(segs[prev].aOff, segs[prev].u, segs[i].aOff, segs[i].u); if (ip1) sA = ip1
-            const ip2 = intersect(segs[i].aOff, segs[i].u, segs[next].aOff, segs[next].u); if (ip2) sB = ip2
+            const ip1 = intersectLines(lines[prev].aOff, lines[prev].u, lines[i].aOff, lines[i].u); if (ip1) sA = ip1
+            const ip2 = intersectLines(lines[i].aOff, lines[i].u, lines[next].aOff, lines[next].u); if (ip2) sB = ip2
             const s1 = modelToScreen(sA, { width: css.width, height: css.height }, pxPerMm)
             const s2 = modelToScreen(sB, { width: css.width, height: css.height }, pxPerMm)
             ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke()
@@ -128,15 +125,14 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
       if (showEaves && f.eaves?.enabled) {
         const n = poly.length
         // 画面座標での多角形面積（外側法線の向き判定）
-        let areaS = 0; for (let i=0;i<n;i++){ const a=poly[i], b=poly[(i+1)%n]; areaS += a.x*b.y - a.y*b.x }
-        const outward = (ux:number, uy:number) => (areaS < 0 ? { x: -uy, y: ux } : { x: uy, y: -ux })
+        let areaS = signedAreaScreen(poly)
         for (let i=0;i<n;i++) {
           const a = poly[i]
           const b = poly[(i+1)%n]
           const dv = { x: b.x - a.x, y: b.y - a.y }
           const L = Math.hypot(dv.x, dv.y); if (L < 1e-6) continue
           const u = { x: dv.x / L, y: dv.y / L }
-          const on = outward(u.x, u.y)
+          const on = outwardNormalScreen(u, areaS)
           const dmm = f.eaves?.perEdge?.[i] ?? f.eaves?.amountMm ?? 0
           if (!dmm || dmm <= 0) continue
           const eavesPx = dmm * pxPerMm
@@ -208,8 +204,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
     for (const { floor: f, pts } of sorted) {
       const n = pts.length
       // 有向面積で外側法線を決定
-      let area = 0; for (let i=0;i<n;i++){ const a=pts[i], b=pts[(i+1)%n]; area += a.x*b.y - a.y*b.x } area *= 0.5
-      const outward = (vx:number, vy:number) => area < 0 ? { x: -vy, y: vx } : { x: vy, y: -vx }
+      const area = signedArea2D(pts)
       const sideSegs: Record<Side, Seg[]> = { top: [], bottom: [], left: [], right: [] }
       for (let i=0;i<n;i++) {
         const a = pts[i], b = pts[(i+1)%n]
@@ -217,7 +212,7 @@ const PreviewOverlay: React.FC<Props> = ({ floors, onClose }) => {
         const L = Math.hypot(v.x, v.y)
         if (L < 1e-6) continue
         const u = { x: v.x / L, y: v.y / L }
-        const on = outward(u.x, u.y)
+        const on = outwardNormalModel(u, area)
         // 面の決定（外側法線の向きで分類）
         let side: Side | null = null
         if (on.y > 0.5) side = 'top'

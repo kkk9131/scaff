@@ -4,13 +4,12 @@ import TopBar from '@/components/TopBar'
 import PreviewOverlay from '@/components/PreviewOverlay'
 import Sidebar, { ViewMode } from '@/components/Sidebar'
 import CanvasArea from '@/components/CanvasArea'
-import { createFloor, duplicateFloor, FloorState, randomId, nextFloorName } from '@/core/floors'
-import { pickFloorColors } from '@/ui/palette'
+import { createFloor, duplicateFloor, FloorState, randomId, nextFloorName, cloneShape, createDefaultShape } from '@/core/floors'
+import { pickFloorColorsByName } from '@/ui/palette'
 import type { TemplateKind } from '@/core/model'
 import ThreePlaceholder from '@/components/ThreePlaceholder'
 import { SNAP_DEFAULTS } from '@/core/snap'
-import { downloadJson, loadFromLocalStorage, parseSaveData, saveToLocalStorage, serializeSaveData, clearLocalStorage, type PersistFloor } from '@/io/persist'
-import type { FloorState as FS } from '@/core/floors'
+import { downloadJson, loadFromLocalStorage, parseSaveData, saveToLocalStorage, serializeSaveData, clearLocalStorage, persistFloorToState } from '@/io/persist'
 
 export default function Page() {
   // 日本語コメント: フェーズ1のUI骨格（上部バー＋左サイドバー＋中央キャンバス）
@@ -22,7 +21,7 @@ export default function Page() {
   // 日本語コメント: 階層管理（将来3D化に備える）。初期は1Fのみ。
   const [floors, setFloors] = useState<FloorState[]>([(() => {
     const f = createFloor({ index: 1 })
-    f.color = pickFloorColors(0)
+    f.color = pickFloorColorsByName(f.name, 0)
     return f
   })()])
   const [activeFloorId, setActiveFloorId] = useState<string>(floors[0].id)
@@ -109,9 +108,9 @@ export default function Page() {
       const idx = prev.findIndex(f => f.id === activeFloorId)
       const below = prev[idx] ?? null
       // 形状は必ずディープコピーして独立編集できるようにする
-      const shapeCopy = below?.shape ? JSON.parse(JSON.stringify(below.shape)) : undefined
+      const shapeCopy = below?.shape ? cloneShape(below.shape) : undefined
       const next = createFloor({ index: prev.length + 1, below, shape: shapeCopy as any })
-      next.color = pickFloorColors(prev.length)
+      next.color = pickFloorColorsByName(next.name, prev.length)
       const arr = [...prev]
       arr.splice(idx + 1, 0, next)
       // 追加直後にアクティブ化
@@ -127,7 +126,7 @@ export default function Page() {
       const name = nextFloorName(below.name)
       const dup = duplicateFloor(prev[i], { name, below, elevationMm: below.elevationMm + below.heightMm })
       dup.id = randomId()
-      dup.color = pickFloorColors(prev.length)
+      dup.color = pickFloorColorsByName(dup.name, prev.length)
       const arr = [...prev]
       arr.splice(i + 1, 0, dup)
       // 新規階をアクティブに
@@ -151,7 +150,12 @@ export default function Page() {
   const renameFloor = (id: string) => {
     const target = floors.find(f => f.id === id)
     const cur = prompt('フロア名', target?.name ?? '')
-    if (cur != null) patchFloor(id, { name: cur || target?.name || '' })
+    if (cur != null) {
+      const nextName = cur || target?.name || ''
+      const order = floors.findIndex(f => f.id === id)
+      const nextColor = pickFloorColorsByName(nextName, order >= 0 ? order : 0)
+      patchFloor(id, { name: nextName, color: nextColor })
+    }
   }
 
   // 日本語コメント: エディタ初期化（確認ダイアログ→状態リセット→LS消去）
@@ -160,7 +164,7 @@ export default function Page() {
     // まずLSを消去し、その後に初期状態を書き戻す
     clearLocalStorage()
     const f = createFloor({ index: 1 })
-    f.color = pickFloorColors(0)
+    f.color = pickFloorColorsByName(f.name, 0)
     setExpanded(true)
     setView('plan')
     setTemplate('rect')
@@ -171,35 +175,11 @@ export default function Page() {
     setResetKey(k => k + 1) // 子コンポーネントを再マウントして内部状態（ズーム/パン等）も初期化
   }
 
-  // 日本語コメント: PersistFloor → FloorState 変換（shapeがあれば優先。なければ長方形推定にフォールバック）
-  function persistFloorToState(pf: PersistFloor): FS {
-    const base = createFloor({
-      id: pf.id,
-      name: pf.name,
-      elevationMm: pf.elevationMm,
-      heightMm: pf.heightMm,
-      visible: pf.visible ?? true,
-      locked: pf.locked ?? false,
-      color: pf.color,
-      shape: pf.shape as any ?? { kind: 'rect', data: inferRectFromOuter(pf.walls?.outer) },
-      eaves: pf.eaves ?? { enabled: false, amountMm: 600, perEdge: {} },
-    })
-    return base
-  }
-
-  // 日本語コメント: 外周ポリゴンから最小の長方形テンプレ（簡易）を推定（再編集を担保）
-  function inferRectFromOuter(outer: Array<{ x:number; y:number }> | undefined) {
-    if (!outer || outer.length < 3) return { widthMm: 8000, heightMm: 6000 }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-    for (const p of outer) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
-    return { widthMm: Math.max(1, maxX - minX), heightMm: Math.max(1, maxY - minY) }
-  }
-
   // 日本語コメント: アクティブ階変更時にテンプレート種別を同期
   useEffect(() => {
     const f = floors.find(x => x.id === activeFloorId)
     if (f) setTemplate(f.shape.kind)
-  }, [activeFloorId])
+  }, [activeFloorId, floors])
 
   return (
     <div className="h-dvh flex flex-col">
@@ -239,10 +219,7 @@ export default function Page() {
               // アクティブ階の形状種別を切り替え（既定パラメータに初期化）
               setFloors(prev => prev.map(f => f.id === activeFloorId ? {
                 ...f,
-                shape: k==='rect' ? { kind:'rect', data: { widthMm: 8000, heightMm: 6000 } } as any
-                  : k==='l' ? { kind:'l', data: { widthMm: 8000, heightMm: 6000, cutWidthMm: 3000, cutHeightMm: 3000 } } as any
-                  : k==='u' ? { kind:'u', data: { widthMm: 9000, heightMm: 6000, innerWidthMm: 4000, depthMm: 3000 } } as any
-                  : { kind:'t', data: { barWidthMm: 9000, barThickMm: 2000, stemWidthMm: 2000, stemHeightMm: 6000 } } as any
+                shape: createDefaultShape(k),
               } : f))
             }}
             currentTemplate={template}

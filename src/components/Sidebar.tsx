@@ -149,6 +149,11 @@ export const Sidebar: React.FC<{
                 {t.toUpperCase()}
               </button>
             ))}
+            {currentTemplate === 'poly' && (
+              <div className="col-span-2 px-2 py-1 rounded bg-neutral-700/60 text-xs text-neutral-200">
+                カスタム形状（テンプレート解除）
+              </div>
+            )}
           </div>
         )}
 

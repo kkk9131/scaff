@@ -1,8 +1,8 @@
 // 日本語コメント: フェーズ5 データ管理（保存/読み込み/ローカル永続化）
 // 依存を増やさず、最小の型ガードとシリアライザ/デシリアライザを提供する。
 
-import type { FloorState } from '@/core/floors'
-import { outlineRect, outlineL, outlineU, outlineT } from '@/core/model'
+import { createFloor, cloneShape, type FloorState, type FloorShape } from '@/core/floors'
+import { outlineRect, outlineL, outlineU, outlineT, outlinePoly, INITIAL_RECT } from '@/core/model'
 import { signedArea as signedAreaModel } from '@/core/eaves/offset'
 
 // 保存フォーマット（MVP）
@@ -19,7 +19,7 @@ export type PersistFloor = {
   walls: PersistWalls
   eaves?: PersistEaves
   // エディタ再現用のオプション（将来、変換に移行可能）
-  shape?: { kind: 'rect'|'l'|'u'|'t'; data: any }
+  shape?: { kind: 'rect'|'l'|'u'|'t'|'poly'; data: any }
   visible?: boolean
   locked?: boolean
 }
@@ -35,7 +35,8 @@ export function floorToPersist(f: FloorState): PersistFloor {
   const outer = f.shape.kind === 'rect' ? outlineRect(f.shape.data)
     : f.shape.kind === 'l' ? outlineL(f.shape.data)
     : f.shape.kind === 'u' ? outlineU(f.shape.data)
-    : outlineT(f.shape.data)
+    : f.shape.kind === 't' ? outlineT(f.shape.data)
+    : outlinePoly(f.shape.data)
   // 外周=反時計回り（CCW）に正規化
   const area = signedAreaModel(outer)
   const outerCCW = area >= 0 ? outer.slice() : outer.slice().reverse()
@@ -47,9 +48,57 @@ export function floorToPersist(f: FloorState): PersistFloor {
     color: f.color ? { ...f.color } : undefined,
     walls: { outer: outerCCW },
     eaves: f.eaves ? { enabled: !!f.eaves.enabled, amountMm: f.eaves.amountMm, perEdge: f.eaves.perEdge && Object.keys(f.eaves.perEdge).length ? { ...f.eaves.perEdge } : undefined } : undefined,
-    shape: f.shape ? { kind: f.shape.kind, data: { ...f.shape.data } } : undefined,
+    shape: f.shape ? { kind: f.shape.kind, data: f.shape.kind === 'poly' ? { vertices: outerCCW.map(p => ({ ...p })) } : { ...f.shape.data } } : undefined,
     visible: f.visible,
     locked: f.locked,
+  }
+}
+
+// 日本語コメント: PersistFloor から FloorState を生成
+export function persistFloorToState(pf: PersistFloor): FloorState {
+  const shape = normalizePersistShape(pf)
+  const eaves = pf.eaves
+    ? { enabled: !!pf.eaves.enabled, amountMm: pf.eaves.amountMm, perEdge: pf.eaves.perEdge ? { ...pf.eaves.perEdge } : {} }
+    : { enabled: false, amountMm: 600, perEdge: {} }
+  return createFloor({
+    id: pf.id,
+    name: pf.name,
+    elevationMm: pf.elevationMm,
+    heightMm: pf.heightMm,
+    visible: pf.visible ?? true,
+    locked: pf.locked ?? false,
+    color: pf.color,
+    shape,
+    eaves,
+  })
+}
+
+function normalizePersistShape(pf: PersistFloor): FloorShape {
+  if (pf.shape) {
+    return cloneShape(pf.shape as FloorShape)
+  }
+  const rect = inferRectFromOuter(pf.walls?.outer)
+  return { kind: 'rect', data: rect }
+}
+
+// 日本語コメント: 外周情報から矩形テンプレ寸法を推定（shape欠損時のフォールバック）
+export function inferRectFromOuter(outer: PersistVec2[] | undefined) {
+  if (!outer || outer.length < 3) {
+    return { ...INITIAL_RECT }
+  }
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  for (const p of outer) {
+    minX = Math.min(minX, p.x)
+    maxX = Math.max(maxX, p.x)
+    minY = Math.min(minY, p.y)
+    maxY = Math.max(maxY, p.y)
+  }
+  return {
+    widthMm: Math.max(1, maxX - minX),
+    heightMm: Math.max(1, maxY - minY),
   }
 }
 
@@ -69,8 +118,13 @@ function validatePersistFloor(obj: any): obj is PersistFloor {
     if (obj.eaves.perEdge && typeof obj.eaves.perEdge !== 'object') return false
   }
   if (obj.shape) {
-    if (!obj.shape.kind || !['rect','l','u','t'].includes(obj.shape.kind)) return false
+    const kinds = ['rect','l','u','t','poly']
+    if (!obj.shape.kind || !kinds.includes(obj.shape.kind)) return false
     if (!obj.shape.data || typeof obj.shape.data !== 'object') return false
+    if (obj.shape.kind === 'poly') {
+      const verts = obj.shape.data.vertices
+      if (!Array.isArray(verts) || !verts.every(isVec2)) return false
+    }
   }
   return true
 }

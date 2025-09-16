@@ -357,3 +357,45 @@
 - 完全初期化対応の記録を追加
 2025-09-15 15:23: mainを最新化
 - origin/main の最新コミットを取り込み（fast-forward）
+2025-09-15 23:02: リファクタ開始（命名統一と軽微な整理）
+- 寸法エンジンTSをケバブケースへリネーム（dimension_engine.ts→dimension-engine.ts）
+- 参照更新（CanvasArea/PreviewOverlay/テスト）
+- floors.ts の型only importの誤りを修正
+- 未使用インポートの整理（CanvasArea）
+
+2025-09-15 23:47: 幾何ユーティリティを追加し外側法線計算を共通化
+- 共有モジュール追加（src/core/geometry/orientation.ts）
+- CanvasArea/PreviewOverlayで外側法線の自前実装を置換（挙動は不変）
+2025-09-15 23:59: 直線交点ユーティリティを追加し重複排除
+- 共通関数 intersectLines を追加（src/core/geometry/lines.ts）
+- CanvasArea/PreviewOverlay のローカル実装を置換（挙動は不変）
+- design ドキュメントのファイル名表記を修正（dimension-engine.ts）
+2025-09-16 00:05: 軒の出処理の共通化（ロジック移設のみ）
+- 共通ヘルパ追加（src/core/eaves/helpers.ts）
+- CanvasArea/PreviewOverlay からオフセット線・交点調整ロジックを移設（見た目は不変）
+2025-09-16 00:12: 面積計算の共通化（shoelace重複の削減）
+- PreviewOverlay で signedArea2D を使用（モデル座標）
+2025-09-16 00:17: 面積計算の共通化（2箇所目）
+- PreviewOverlay 側面分類の面積計算を signedArea2D に置換
+2025-09-16 00:18: 未使用インポートの整理
+- CanvasArea から intersectLines の直接インポートを削除（共通ヘルパ経由で使用）
+2025-09-16 00:26: 寸法エンジンの面積計算を共通化
+- dimension-engine.ts で signedArea2D を利用しローカル関数を削除（挙動不変）
+2025-09-16 00:31: インポート修正
+- CanvasArea の軒ヒットテストで使用する offsetPolygonOuterVariable を再インポート
+2025-09-16 00:43: Canvasの描画重複を小関数化
+- 軒の出の点線描画を drawEavesDashed() に抽出（挙動不変・肘ライン対応）
+2025-09-16 14:18: 形状永続化周りのリファクタリングを実施
+- floors.tsでcloneShape/createDefaultShapeを追加しJSON経由の複製を排除
+- persist.tsにpersistFloorToStateと矩形推定ヘルパーを集約
+- Pageコンポーネントで新ヘルパーを利用するよう整理（挙動不変）
+- 軒ラベル描画で未定義変数を参照していたため、辺数と面積を算出するよう修正
+2025-09-16 15:27: テンプレート形状をカスタム多角形へ変換できるように拡張
+- FloorShapeにpoly種別を追加し保存フォーマットを対応
+- CanvasAreaで頂点ドラッグ時に自動的に多角形へ変換し自由編集を許可
+- Sidebarにカスタム表示を追加しESLint検証を通過確認
+- カスタム多角形でも辺長入力で隣接頂点を移動できるよう寸法編集を実装
+- フロア複製時は元の色を維持するよう修正（同階バリエーションで統一色を保持）
+- クリック押下中のスクロールで平面をパンできるようホイール処理を拡張
+- トラックパッドでもパンできるようスクロール時の汎用処理を拡張（クリック押下中に限り）
+- onWheel内の重複定義を整理

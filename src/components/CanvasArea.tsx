@@ -1,16 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // 日本語コメント: 内部モデル（mm単位）と座標変換のユーティリティ
-import { DEFAULT_PX_PER_MM } from '@/core/units'
-import { bboxOf, outlineOf, TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_T, outlineL, outlineU, outlineT, bboxOfL, bboxOfU, bboxOfT } from '@/core/model'
+import { DEFAULT_PX_PER_MM, type Vec2 } from '@/core/units'
+import { TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_T, outlineL, outlineU, outlineT, outlinePoly, bboxOfL, bboxOfU, bboxOfT, bboxOfPoly } from '@/core/model'
 import { lengthToScreen, modelToScreen, screenToModel } from '@/core/transform'
 import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
 import { COLORS, withAlpha } from '@/ui/colors'
 import type { FloorState } from '@/core/floors'
 // 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
-import { DimensionEngine } from '@/core/dimensions/dimension_engine'
-import { offsetPolygonOuterVariable, signedArea as signedAreaModel } from '@/core/eaves/offset'
+import { DimensionEngine } from '@/core/dimensions/dimension-engine'
+import { signedArea as signedAreaModel, offsetPolygonOuterVariable } from '@/core/eaves/offset'
+import { outwardNormalModel } from '@/core/geometry/orientation'
+import { buildOffsetLines, adjustedSegmentEndpoints } from '@/core/eaves/helpers'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
-export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState[]; activeFloorId?: string; activeShape?: { kind: 'rect'|'l'|'u'|'t'; data: any }; onUpdateActiveFloorShape?: (id: string, shape: { kind: 'rect'|'l'|'u'|'t'; data: any }) => void; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; onUpdateEaves?: (id: string, patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void }> = ({ template = 'rect', floors = [], activeFloorId, activeShape, onUpdateActiveFloorShape, snapOptions, dimensionOptions, eavesOptions, onUpdateEaves }) => {
+export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState[]; activeFloorId?: string; activeShape?: { kind: TemplateKind; data: any }; onUpdateActiveFloorShape?: (id: string, shape: { kind: TemplateKind; data: any }) => void; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; onUpdateEaves?: (id: string, patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void }> = ({ template = 'rect', floors = [], activeFloorId, activeShape, onUpdateActiveFloorShape, snapOptions, dimensionOptions, eavesOptions, onUpdateEaves }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
   const ref = useRef<HTMLCanvasElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -18,6 +20,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
   // 寸法設定は描画クロージャから参照するためRefに保持
   const dimOptsRef = useRef(dimensionOptions)
   const eavesRef = useRef(eavesOptions)
+  const snapRef = useRef<SnapOptions>(snapOptions ?? SNAP_DEFAULTS)
   // 日本語コメント: フロア関連の最新値を参照するためのRef
   const floorsRef = useRef<FloorState[]>(floors || [])
   const activeFloorIdRef = useRef<string | undefined>(activeFloorId)
@@ -31,15 +34,59 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
   const [lMm, setLMm] = useState(INITIAL_L)
   const [uMm, setUMm] = useState(INITIAL_U)
   const [tMm, setTMm] = useState(INITIAL_T)
+  const [polyMmState, setPolyMmState] = useState<Vec2[] | null>(null)
 
   // 日本語コメント: 描画やイベント内で最新値を参照するための参照
   const rectRef = useRef(rectMm)
   const lRef = useRef(lMm)
   const uRef = useRef(uMm)
   const tRef = useRef(tMm)
+  const polyRef = useRef<Vec2[] | null>(polyMmState)
   const templateRef = useRef<TemplateKind>(template)
   const drawRef = useRef<() => void>()
-  const emitShape = () => {
+  const onUpdateEavesRef = useRef(onUpdateEaves)
+
+  // 日本語コメント: 共通ヘルパ — 軒の出の点線を描画（必要に応じて“片側のみ”の肘ラインを追加）
+  const drawEavesDashed = (
+    ctx: CanvasRenderingContext2D,
+    polyMm: Array<{x:number;y:number}>,
+    polyScreen: Array<{x:number;y:number}>,
+    perMm: number[],
+    color: string,
+    cssBounds: { width: number; height: number },
+    pxPerMm: number,
+    panNow: { x: number; y: number },
+    withElbows: boolean,
+  ) => {
+    const n = polyMm.length
+    const areaModel = signedAreaModel(polyMm)
+    const lines = buildOffsetLines(polyMm, perMm, areaModel)
+    for (let i=0;i<n;i++) {
+      if ((perMm[i] ?? 0) <= 0) continue
+      const prev = (i+n-1)%n, next = (i+1)%n
+      const { start, end } = adjustedSegmentEndpoints(lines as any, perMm, i)
+      const s0 = modelToScreen(start, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+      const e0 = modelToScreen(end, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+      const s = { x: s0.x + panNow.x, y: s0.y + panNow.y }
+      const e = { x: e0.x + panNow.x, y: e0.y + panNow.y }
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke()
+
+      if (withElbows) {
+        const aWall = polyScreen[i]
+        const bWall = polyScreen[next]
+        const isHorizontal = Math.abs(aWall.y - bWall.y) < 1e-6
+        if ((perMm[prev] ?? 0) === 0) {
+          const elbow = isHorizontal ? { x: aWall.x, y: s.y } : { x: s.x, y: aWall.y }
+          ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(elbow.x, elbow.y); ctx.lineTo(aWall.x, aWall.y); ctx.stroke()
+        }
+        if ((perMm[next] ?? 0) === 0) {
+          const elbow = isHorizontal ? { x: bWall.x, y: e.y } : { x: e.x, y: bWall.y }
+          ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(elbow.x, elbow.y); ctx.lineTo(bWall.x, bWall.y); ctx.stroke()
+        }
+      }
+    }
+  }
+  const emitShape = useCallback(() => {
     if (!onUpdateActiveFloorShape) return
     const id = activeFloorIdRef.current
     if (!id) return
@@ -47,26 +94,72 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
     const shape = k==='rect' ? { kind:'rect' as const, data: rectRef.current }
       : k==='l' ? { kind:'l' as const, data: lRef.current }
       : k==='u' ? { kind:'u' as const, data: uRef.current }
-      : { kind:'t' as const, data: tRef.current }
+      : k==='t' ? { kind:'t' as const, data: tRef.current }
+      : { kind:'poly' as const, data: { vertices: (polyRef.current ?? outlineRect(rectRef.current)).map(v => ({ ...v })) } }
     onUpdateActiveFloorShape(id, shape as any)
-  }
+  }, [onUpdateActiveFloorShape])
+  const emitShapeRef = useRef(emitShape)
   useEffect(() => { rectRef.current = rectMm }, [rectMm])
   useEffect(() => { lRef.current = lMm }, [lMm])
   useEffect(() => { uRef.current = uMm }, [uMm])
   useEffect(() => { tRef.current = tMm }, [tMm])
+  useEffect(() => { polyRef.current = polyMmState ? polyMmState.map(v => ({ ...v })) : null }, [polyMmState])
+  useEffect(() => { emitShapeRef.current = emitShape }, [emitShape])
+  useEffect(() => { onUpdateEavesRef.current = onUpdateEaves }, [onUpdateEaves])
+  const convertToPoly = useCallback(() => {
+    const current = templateRef.current
+    if (current === 'poly') return
+    const base = current === 'rect' ? outlineRect(rectRef.current)
+      : current === 'l' ? outlineL(lRef.current)
+      : current === 'u' ? outlineU(uRef.current)
+      : current === 't' ? outlineT(tRef.current)
+      : []
+    const pts = base.map(p => ({ ...p }))
+    templateRef.current = 'poly'
+    polyRef.current = pts.map(p => ({ ...p }))
+    setPolyMmState(pts)
+    emitShapeRef.current?.()
+  }, [])
+  const convertToPolyRef = useRef(convertToPoly)
+  useEffect(() => { convertToPolyRef.current = convertToPoly }, [convertToPoly])
+  const pointerDownRef = useRef(false)
   useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
   // アクティブ階やフロア構成が変わったら再描画
   useEffect(() => { drawRef.current?.() }, [floors, activeFloorId])
   // 日本語コメント: アクティブ階の形状（外部状態）→内部編集状態へ同期
+  const activeShapeKind = activeShape?.kind as TemplateKind | undefined
+  const activeShapeData = activeShape?.data
+  const activeShapeSignature = useMemo(() => {
+    if (!activeShapeKind) return 'none'
+    if (activeShapeKind === 'poly') {
+      const verts = (activeShapeData?.vertices ?? []) as Vec2[]
+      return JSON.stringify(verts)
+    }
+    return JSON.stringify(activeShapeData ?? {})
+  }, [activeShapeKind, activeShapeData])
   useEffect(() => {
-    if (!activeShape) return
-    if (activeShape.kind === 'rect') { setRectMm(prev => ({ ...prev, ...activeShape.data })) }
-    else if (activeShape.kind === 'l') { setLMm(prev => ({ ...prev, ...activeShape.data })) }
-    else if (activeShape.kind === 'u') { setUMm(prev => ({ ...prev, ...activeShape.data })) }
-    else { setTMm(prev => ({ ...prev, ...activeShape.data })) }
-  }, [activeShape?.kind, JSON.stringify(activeShape?.data ?? {})])
+    if (!activeShapeKind) return
+    if (activeShapeKind === 'poly' && activeShapeData?.vertices) {
+      const verts = (activeShapeData.vertices as Vec2[]).map(v => ({ ...v }))
+      setPolyMmState(verts)
+      return
+    }
+    if (activeShapeKind !== 'poly') {
+      setPolyMmState(null)
+    }
+    if (activeShapeKind === 'rect' && activeShapeData) {
+      setRectMm(prev => ({ ...prev, ...activeShapeData }))
+    } else if (activeShapeKind === 'l' && activeShapeData) {
+      setLMm(prev => ({ ...prev, ...activeShapeData }))
+    } else if (activeShapeKind === 'u' && activeShapeData) {
+      setUMm(prev => ({ ...prev, ...activeShapeData }))
+    } else if (activeShapeKind === 't' && activeShapeData) {
+      setTMm(prev => ({ ...prev, ...activeShapeData }))
+    }
+  }, [activeShapeKind, activeShapeSignature, activeShapeData])
   useEffect(() => { dimOptsRef.current = dimensionOptions; drawRef.current?.() }, [dimensionOptions])
   useEffect(() => { eavesRef.current = eavesOptions; drawRef.current?.() }, [eavesOptions])
+  useEffect(() => { snapRef.current = snapOptions ?? SNAP_DEFAULTS; drawRef.current?.() }, [snapOptions])
   useEffect(() => { floorsRef.current = floors || []; drawRef.current?.() }, [floors])
   useEffect(() => { activeFloorIdRef.current = activeFloorId; drawRef.current?.() }, [activeFloorId])
   useEffect(() => {
@@ -77,6 +170,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
   useEffect(() => { zoomRef.current = zoom; drawRef.current?.() }, [zoom])
   useEffect(() => { panRef.current = pan; drawRef.current?.() }, [pan])
 
+  // 日本語コメント: キャンバスイベントと描画ループは一度だけ登録し、可変値はRefで参照する
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const canvas = ref.current!
     const ctx = canvas.getContext('2d')!
@@ -95,7 +190,15 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
 
       // 日本語コメント: スケール（px/mm）。形状のバウンディングボックスでオートフィットし、ユーザー倍率を適用。
       const kind = templateRef.current
-      const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+      const bb = kind === 'rect'
+        ? { widthMm: rectRef.current.widthMm, heightMm: rectRef.current.heightMm }
+        : kind === 'l'
+          ? bboxOfL(lRef.current)
+          : kind === 'u'
+            ? bboxOfU(uRef.current)
+            : kind === 't'
+              ? bboxOfT(tRef.current)
+              : bboxOfPoly(polyRef.current ?? outlineRect(rectRef.current))
       const wFit = cssBounds.width * 0.9 / bb.widthMm
       const hFit = cssBounds.height * 0.9 / bb.heightMm
       const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
@@ -106,7 +209,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       const centerBase = modelToScreen({ x: 0, y: 0 }, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
       const center = { x: centerBase.x + panNow.x, y: centerBase.y + panNow.y }
 
-      const snap = snapOptions ?? SNAP_DEFAULTS
+      const snap = snapRef.current ?? SNAP_DEFAULTS
       // 日本語コメント: グリッド描画（スナップ可視化）。薄い線で gridMm 間隔
       if (snap.enableGrid && snap.gridMm > 0) {
         const stepPx = snap.gridMm * pxPerMm
@@ -144,14 +247,16 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
           polyMmTmp = kAct==='rect' ? outlineRect(rectRef.current)
             : kAct==='l' ? outlineL(lRef.current)
             : kAct==='u' ? outlineU(uRef.current)
-            : outlineT(tRef.current)
+            : kAct==='t' ? outlineT(tRef.current)
+            : (polyRef.current ?? outlineRect(rectRef.current)).map(p => ({ ...p }))
         } else {
           const kFloor = f.shape?.kind ?? 'rect'
           const d = (f.shape as any)?.data
           polyMmTmp = kFloor==='rect' ? outlineRect(d)
             : kFloor==='l' ? outlineL(d)
             : kFloor==='u' ? outlineU(d)
-            : outlineT(d)
+            : kFloor==='t' ? outlineT(d)
+            : outlinePoly(d)
         }
         const polyScreenTmp = polyMmTmp.map(p => {
           const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
@@ -168,56 +273,22 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
 
         // 非アクティブ階でも軒の出ラインを点線で表示（視認性確保）。編集はしない。
         if (!isActive && f.eaves?.enabled && (f.eaves.amountMm > 0 || (f.eaves.perEdge && Object.keys(f.eaves.perEdge).length > 0))) {
-          const n = polyMmTmp.length
           const perMm = polyMmTmp.map((_, i) => f.eaves?.perEdge?.[i] ?? f.eaves?.amountMm ?? 0)
-          const areaModelNA = signedAreaModel(polyMmTmp)
-          const outwardNA = (vx: number, vy: number) => (areaModelNA < 0 ? { x: -vy, y: vx } : { x: vy, y: -vx })
-          type LineNA = { a:{x:number;y:number}; b:{x:number;y:number}; u:{x:number;y:number}; aOff:{x:number;y:number}; bOff:{x:number;y:number} }
-          const linesNA: LineNA[] = []
-          for (let i=0;i<n;i++) {
-            const a = polyMmTmp[i]
-            const b = polyMmTmp[(i+1)%n]
-            const v = { x: b.x - a.x, y: b.y - a.y }
-            const L = Math.hypot(v.x, v.y) || 1
-            const u = { x: v.x / L, y: v.y / L }
-            const on = outwardNA(u.x, u.y)
-            const dmm = perMm[i] || 0
-            const off = { x: on.x * dmm, y: on.y * dmm }
-            linesNA.push({ a, b, u, aOff: { x: a.x + off.x, y: a.y + off.y }, bOff: { x: b.x + off.x, y: b.y + off.y } })
-          }
-          const intersectNA = (p1:{x:number;y:number}, v1:{x:number;y:number}, p2:{x:number;y:number}, v2:{x:number;y:number}) => {
-            const denom = v1.x * v2.y - v1.y * v2.x
-            if (Math.abs(denom) < 1e-8) return null
-            const w = { x: p2.x - p1.x, y: p2.y - p1.y }
-            const t = (w.x * v2.y - w.y * v2.x) / denom
-            return { x: p1.x + v1.x * t, y: p1.y + v1.y * t }
-          }
           ctx.setLineDash([6,4])
           ctx.strokeStyle = withAlpha(col, 0.7)
           ctx.lineWidth = 2
-          for (let i=0;i<n;i++) {
-            if ((perMm[i] ?? 0) <= 0) continue
-            const prev = (i+n-1)%n, next = (i+1)%n
-            let start = linesNA[i].aOff
-            let end = linesNA[i].bOff
-            if ((perMm[prev] ?? 0) > 0) {
-              const ip = intersectNA(linesNA[prev].aOff, linesNA[prev].u, linesNA[i].aOff, linesNA[i].u); if (ip) start = ip
-            }
-            if ((perMm[next] ?? 0) > 0) {
-              const ip = intersectNA(linesNA[i].aOff, linesNA[i].u, linesNA[next].aOff, linesNA[next].u); if (ip) end = ip
-            }
-            const s0 = modelToScreen(start, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
-            const e0 = modelToScreen(end, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
-            const s = { x: s0.x + panNow.x, y: s0.y + panNow.y }
-            const e = { x: e0.x + panNow.x, y: e0.y + panNow.y }
-            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke()
-          }
+          drawEavesDashed(ctx, polyMmTmp as any, polyScreenTmp as any, perMm, col, { width: cssBounds.width, height: cssBounds.height }, pxPerMm, panNow, false)
           ctx.setLineDash([])
         }
       }
 
       // 以降はアクティブ階の編集/寸法/軒の出を処理
-      const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
+      const polyMmBase = kind === 'rect' ? outlineRect(rectRef.current)
+        : kind === 'l' ? outlineL(lRef.current)
+        : kind === 'u' ? outlineU(uRef.current)
+        : kind === 't' ? outlineT(tRef.current)
+        : (polyRef.current ?? outlineRect(rectRef.current))
+      const polyMm = polyMmBase.map(p => ({ ...p }))
       const polyScreen = polyMm.map(p => {
         const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
         return { x: s.x + panNow.x, y: s.y + panNow.y }
@@ -226,71 +297,13 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       // 日本語コメント: 軒の出（外側オフセット）— 配列長の不一致を避けるため、辺ごとにオフセット直線を作り、隣接辺と交点で端点を調整する。
       const eaves = eavesRef.current
       if (eaves?.enabled && (eaves.amountMm > 0 || (eaves.perEdge && Object.keys(eaves.perEdge).length > 0))) {
-        const n = polyMm.length
         const perMm = polyMm.map((_, i) => eaves.perEdge?.[i] ?? eaves.amountMm)
+        const n = polyMm.length
         const areaModel = signedAreaModel(polyMm)
-        const outward = (vx: number, vy: number) => {
-          // CW: 外側=左法線, CCW: 外側=右法線
-          return areaModel < 0 ? { x: -vy, y: vx } : { x: vy, y: -vx }
-        }
-        type Line = { a:{x:number;y:number}; b:{x:number;y:number}; u:{x:number;y:number}; aOff:{x:number;y:number}; bOff:{x:number;y:number}; dist:number }
-        const lines: Line[] = []
-        for (let i=0;i<n;i++) {
-          const a = polyMm[i]
-          const b = polyMm[(i+1)%n]
-          const v = { x: b.x - a.x, y: b.y - a.y }
-          const L = Math.hypot(v.x, v.y) || 1
-          const u = { x: v.x / L, y: v.y / L }
-          const on = outward(u.x, u.y)
-          const d = perMm[i] || 0
-          const off = { x: on.x * d, y: on.y * d }
-          lines.push({ a, b, u, aOff: { x: a.x + off.x, y: a.y + off.y }, bOff: { x: b.x + off.x, y: b.y + off.y }, dist: d })
-        }
-        const intersect = (p1:{x:number;y:number}, v1:{x:number;y:number}, p2:{x:number;y:number}, v2:{x:number;y:number}) => {
-          const denom = v1.x * v2.y - v1.y * v2.x
-          if (Math.abs(denom) < 1e-8) return null
-          const w = { x: p2.x - p1.x, y: p2.y - p1.y }
-          const t = (w.x * v2.y - w.y * v2.x) / denom
-          return { x: p1.x + v1.x * t, y: p1.y + v1.y * t }
-        }
-
         ctx.strokeStyle = COLORS.wall
         ctx.setLineDash([6, 4])
         ctx.lineWidth = 2
-
-        for (let i=0;i<n;i++) {
-          if ((perMm[i] ?? 0) <= 0) continue
-          const prev = (i+n-1)%n, next = (i+1)%n
-          // 端点を隣接辺と交点で調整
-          let start = lines[i].aOff
-          let end = lines[i].bOff
-          if ((perMm[prev] ?? 0) > 0) {
-            const ip = intersect(lines[prev].aOff, lines[prev].u, lines[i].aOff, lines[i].u)
-            if (ip) start = ip
-          }
-          if ((perMm[next] ?? 0) > 0) {
-            const ip = intersect(lines[i].aOff, lines[i].u, lines[next].aOff, lines[next].u)
-            if (ip) end = ip
-          }
-          const s0 = modelToScreen(start, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
-          const e0 = modelToScreen(end, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
-          const s = { x: s0.x + panNow.x, y: s0.y + panNow.y }
-          const e = { x: e0.x + panNow.x, y: e0.y + panNow.y }
-          ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke()
-
-          // 片側のみ有効ならL字で壁頂点へ
-          const aWall = polyScreen[i]
-          const bWall = polyScreen[next]
-          const isHorizontal = Math.abs(aWall.y - bWall.y) < 1e-6
-          if ((perMm[prev] ?? 0) === 0) {
-            const elbow = isHorizontal ? { x: aWall.x, y: s.y } : { x: s.x, y: aWall.y }
-            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(elbow.x, elbow.y); ctx.lineTo(aWall.x, aWall.y); ctx.stroke()
-          }
-          if ((perMm[next] ?? 0) === 0) {
-            const elbow = isHorizontal ? { x: bWall.x, y: e.y } : { x: e.x, y: bWall.y }
-            ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(elbow.x, elbow.y); ctx.lineTo(bWall.x, bWall.y); ctx.stroke()
-          }
-        }
+        drawEavesDashed(ctx, polyMm as any, polyScreen as any, perMm, COLORS.wall, { width: cssBounds.width, height: cssBounds.height }, pxPerMm, panNow, true)
         ctx.setLineDash([])
 
         // ラベル配置（各辺中点とオフセット線分中点の間）
@@ -554,7 +567,15 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
 
       // スケールを描画と同様に算出
       const kind = templateRef.current
-      const bbNow = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+      const bbNow = kind === 'rect'
+        ? { widthMm: rectRef.current.widthMm, heightMm: rectRef.current.heightMm }
+        : kind === 'l'
+          ? bboxOfL(lRef.current)
+          : kind === 'u'
+            ? bboxOfU(uRef.current)
+            : kind === 't'
+              ? bboxOfT(tRef.current)
+              : bboxOfPoly(polyRef.current ?? outlineRect(rectRef.current))
       const wFit = cssBounds.width * 0.9 / bbNow.widthMm
       const hFit = cssBounds.height * 0.9 / bbNow.heightMm
       const basePxPerMm = Math.min(DEFAULT_PX_PER_MM, wFit, hFit)
@@ -564,7 +585,11 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       center.x += panNow.x; center.y += panNow.y
 
       // 現在形状のスクリーン座標ポリライン（閉路）を生成
-      const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
+      const polyMm = kind === 'rect' ? outlineRect(rectRef.current)
+        : kind === 'l' ? outlineL(lRef.current)
+        : kind === 'u' ? outlineU(uRef.current)
+        : kind === 't' ? outlineT(tRef.current)
+        : (polyRef.current ?? outlineRect(rectRef.current))
       const poly = polyMm.map(p => {
         const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
         return { x: s.x + panNow.x, y: s.y + panNow.y }
@@ -634,7 +659,8 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
             }
             const id = activeFloorIdRef.current
             eavesRef.current = { ...eaves, perEdge: per } // ローカル反映
-            if (id) onUpdateEaves?.(id, { perEdge: per })
+            const updateEaves = onUpdateEavesRef.current
+            if (id) updateEaves?.(id, { perEdge: per })
             draw()
             return
           }
@@ -673,126 +699,151 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         // 辺インデックス: 0=上,1=右,2=下,3=左
         const idx = best.idx % 4
         if (idx === 0 || idx === 2) {
-          const val = window.prompt(`${edgeLabel} の長さ（東西方向, mm）を入力`, String(rectMm.widthMm))
+          const val = window.prompt(`${edgeLabel} の長さ（東西方向, mm）を入力`, String(rectRef.current.widthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setRectMm(r => { const next = { ...r, widthMm: mm }; rectRef.current = next; emitShape(); return next })
+          setRectMm(r => { const next = { ...r, widthMm: mm }; rectRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else {
-          const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(rectMm.heightMm))
+          const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(rectRef.current.heightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setRectMm(r => { const next = { ...r, heightMm: mm }; rectRef.current = next; emitShape(); return next })
+          setRectMm(r => { const next = { ...r, heightMm: mm }; rectRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         }
       } else if (kind === 'l') {
         // L: 0=上(左部分:東西→幅), 1=内側縦(南北→切欠高), 2=内側上(東西→切欠幅), 3=右外側縦(南北→外形高), 4=下(東西→外形幅), 5=左外側縦(南北→外形高)
         const idx = best.idx % 6
         if (idx === 0 || idx === 4) {
-          const val = window.prompt(`${edgeLabel} の長さ（東西方向, mm）を入力`, String(lMm.widthMm))
+          const val = window.prompt(`${edgeLabel} の長さ（東西方向, mm）を入力`, String(lRef.current.widthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setLMm(p => { const next = { ...p, widthMm: mm }; lRef.current = next; emitShape(); return next })
+        setLMm(p => { const next = { ...p, widthMm: mm }; lRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 3 || idx === 5) {
-          const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(lMm.heightMm))
+          const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(lRef.current.heightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setLMm(p => { const next = { ...p, heightMm: mm }; lRef.current = next; emitShape(); return next })
+        setLMm(p => { const next = { ...p, heightMm: mm }; lRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 1) {
-          const val = window.prompt(`${edgeLabel} の長さ（切欠きの南北, mm）を入力`, String(lMm.cutHeightMm))
+          const val = window.prompt(`${edgeLabel} の長さ（切欠きの南北, mm）を入力`, String(lRef.current.cutHeightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setLMm(p => { const next = { ...p, cutHeightMm: mm }; lRef.current = next; emitShape(); return next })
+        setLMm(p => { const next = { ...p, cutHeightMm: mm }; lRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 2) {
-          const val = window.prompt(`${edgeLabel} の長さ（切欠きの東西, mm）を入力`, String(lMm.cutWidthMm))
+          const val = window.prompt(`${edgeLabel} の長さ（切欠きの東西, mm）を入力`, String(lRef.current.cutWidthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setLMm(p => { const next = { ...p, cutWidthMm: mm }; lRef.current = next; emitShape(); return next })
+        setLMm(p => { const next = { ...p, cutWidthMm: mm }; lRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         }
       } else if (kind === 'u') {
         // U: 0=上(左),1=内側左縦(南北→深さ),2=内側底(東西→開口幅),3=内側右縦(南北→深さ),4=上(右),5=右外側縦(南北→外形高),6=下(東西→外形幅),7=左外側縦(南北→外形高)
         const idx = best.idx % 8
         if (idx === 6 || idx === 0 || idx === 4) {
-          const val = window.prompt(`${edgeLabel} の長さ（東西方向, mm）を入力`, String(uMm.widthMm))
+          const val = window.prompt(`${edgeLabel} の長さ（東西方向, mm）を入力`, String(uRef.current.widthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setUMm(p => { const next = { ...p, widthMm: mm }; uRef.current = next; emitShape(); return next })
+        setUMm(p => { const next = { ...p, widthMm: mm }; uRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 5 || idx === 7) {
-          const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(uMm.heightMm))
+          const val = window.prompt(`${edgeLabel} の長さ（南北方向, mm）を入力`, String(uRef.current.heightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setUMm(p => { const next = { ...p, heightMm: mm }; uRef.current = next; emitShape(); return next })
+        setUMm(p => { const next = { ...p, heightMm: mm }; uRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 2) {
-          const val = window.prompt(`${edgeLabel} の長さ（開口の東西, mm）を入力`, String(uMm.innerWidthMm))
+          const val = window.prompt(`${edgeLabel} の長さ（開口の東西, mm）を入力`, String(uRef.current.innerWidthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setUMm(p => { const next = { ...p, innerWidthMm: mm }; uRef.current = next; emitShape(); return next })
+        setUMm(p => { const next = { ...p, innerWidthMm: mm }; uRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 1 || idx === 3) {
-          const val = window.prompt(`${edgeLabel} の長さ（開口の南北=深さ, mm）を入力`, String(uMm.depthMm))
+          const val = window.prompt(`${edgeLabel} の長さ（開口の南北=深さ, mm）を入力`, String(uRef.current.depthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setUMm(p => { const next = { ...p, depthMm: mm }; uRef.current = next; emitShape(); return next })
+        setUMm(p => { const next = { ...p, depthMm: mm }; uRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         }
       } else if (kind === 't') {
         // T: 0=上バー上辺(東西→バー幅),1=バー右縦(南北→バー厚),2=上部水平(一部),3=柱右縦(南北→柱高),4=柱底(東西→柱幅),5=柱左縦(南北→柱高),6=上部水平(一部),7=バー左縦(南北→バー厚)
         const idx = best.idx % 8
         if (idx === 0) {
-          const val = window.prompt(`${edgeLabel} の長さ（バーの東西=幅, mm）を入力`, String(tMm.barWidthMm))
+          const val = window.prompt(`${edgeLabel} の長さ（バーの東西=幅, mm）を入力`, String(tRef.current.barWidthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setTMm(p => { const next = { ...p, barWidthMm: mm }; tRef.current = next; emitShape(); return next })
+        setTMm(p => { const next = { ...p, barWidthMm: mm }; tRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 1 || idx === 7) {
-          const val = window.prompt(`${edgeLabel} の長さ（バー厚=南北, mm）を入力`, String(tMm.barThickMm))
+          const val = window.prompt(`${edgeLabel} の長さ（バー厚=南北, mm）を入力`, String(tRef.current.barThickMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setTMm(p => { const next = { ...p, barThickMm: mm }; tRef.current = next; emitShape(); return next })
+        setTMm(p => { const next = { ...p, barThickMm: mm }; tRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 2 || idx === 6) {
           // 日本語コメント: バー下の左右短水平は (バー幅 - 柱幅)/2 に相当。
-          const segDefault = Math.max(1, (tMm.barWidthMm - tMm.stemWidthMm) / 2)
+          const segDefault = Math.max(1, (tRef.current.barWidthMm - tRef.current.stemWidthMm) / 2)
           const val = window.prompt(`${edgeLabel} の長さ（東西方向, mm）を入力`, String(segDefault))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          const newBarWidth = tMm.stemWidthMm + 2 * mm
-          setTMm(p => { const next = { ...p, barWidthMm: newBarWidth }; tRef.current = next; emitShape(); return next })
+          const newBarWidth = tRef.current.stemWidthMm + 2 * mm
+          setTMm(p => { const next = { ...p, barWidthMm: newBarWidth }; tRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 3 || idx === 5) {
-          const val = window.prompt(`${edgeLabel} の長さ（柱の南北=高さ, mm）を入力`, String(tMm.stemHeightMm))
+          const val = window.prompt(`${edgeLabel} の長さ（柱の南北=高さ, mm）を入力`, String(tRef.current.stemHeightMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setTMm(p => { const next = { ...p, stemHeightMm: mm }; tRef.current = next; emitShape(); return next })
+        setTMm(p => { const next = { ...p, stemHeightMm: mm }; tRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         } else if (idx === 4) {
-          const val = window.prompt(`${edgeLabel} の長さ（柱の東西=幅, mm）を入力`, String(tMm.stemWidthMm))
+          const val = window.prompt(`${edgeLabel} の長さ（柱の東西=幅, mm）を入力`, String(tRef.current.stemWidthMm))
           if (val == null) return
           const mm = Number(val)
           if (!Number.isFinite(mm) || mm <= 0) return
-          setTMm(p => { const next = { ...p, stemWidthMm: mm }; tRef.current = next; emitShape(); return next })
+        setTMm(p => { const next = { ...p, stemWidthMm: mm }; tRef.current = next; emitShapeRef.current?.(); return next })
           draw()
         }
+      } else if (kind === 'poly') {
+        const verts = polyRef.current ?? outlineRect(rectRef.current)
+        if (!verts.length) return
+        const start = verts[edgeIdx]
+        const end = verts[(edgeIdx + 1) % verts.length]
+        const currentLen = Math.hypot(end.x - start.x, end.y - start.y)
+        const val = window.prompt(`${edgeLabel} の長さ（mm）を入力`, String(Math.round(currentLen)))
+        if (val == null) return
+        const mm = Number(val)
+        if (!Number.isFinite(mm) || mm <= 0) return
+        const dir = { x: end.x - start.x, y: end.y - start.y }
+        const len = Math.hypot(dir.x, dir.y)
+        if (len < 1e-6) return
+        const nx = dir.x / len
+        const ny = dir.y / len
+        const updated = verts.map((pt, idx) => {
+          if (idx === (edgeIdx + 1) % verts.length) {
+            return { x: Math.round(start.x + nx * mm), y: Math.round(start.y + ny * mm) }
+          }
+          return { ...pt }
+        })
+        polyRef.current = updated.map(p => ({ ...p }))
+        setPolyMmState(updated.map(p => ({ ...p })))
+        emitShapeRef.current?.()
+        draw()
       }
     }
     canvas.addEventListener('click', onClick)
@@ -803,15 +854,27 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
     let dragBounds: { width: number; height: number } | null = null
     const onMouseDown = (ev: MouseEvent) => {
       if (activeLockedRef.current) return
+      pointerDownRef.current = true
+      const releasePointer = () => { pointerDownRef.current = false }
+      window.addEventListener('mouseup', releasePointer, { once: true })
       const cssBounds = canvas.getBoundingClientRect()
       const x = ev.clientX - cssBounds.left
       const y = ev.clientY - cssBounds.top
-      const kind = templateRef.current
-      const bbNow = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
+      let kind = templateRef.current
+      const bbNowRaw = kind === 'rect'
+        ? { widthMm: rectRef.current.widthMm, heightMm: rectRef.current.heightMm }
+        : kind === 'l'
+          ? bboxOfL(lRef.current)
+          : kind === 'u'
+            ? bboxOfU(uRef.current)
+            : kind === 't'
+              ? bboxOfT(tRef.current)
+              : bboxOfPoly(polyRef.current ?? outlineRect(rectRef.current))
+      const bbNow = bbNowRaw
       const wFit = cssBounds.width * 0.9 / bbNow.widthMm
       const hFit = cssBounds.height * 0.9 / bbNow.heightMm
       const pxPerMm = Math.max(0.05, Math.min(10, Math.min(DEFAULT_PX_PER_MM, wFit, hFit) * zoomRef.current))
-      const polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : outlineT(tRef.current)
+      let polyMm = kind === 'rect' ? outlineRect(rectRef.current) : kind === 'l' ? outlineL(lRef.current) : kind === 'u' ? outlineU(uRef.current) : kind === 't' ? outlineT(tRef.current) : (polyRef.current ?? outlineRect(rectRef.current))
       const thresholdPx = 8
       let hitIdx: number | null = null
       for (let i = 0; i < polyMm.length; i++) {
@@ -822,6 +885,11 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         if (dx*dx + dy*dy <= thresholdPx*thresholdPx) { hitIdx = i; break }
       }
       if (hitIdx != null) {
+        if (kind !== 'poly') {
+          convertToPolyRef.current?.()
+          kind = 'poly'
+          polyMm = (polyRef.current ?? []).map(p => ({ ...p }))
+        }
         draggingVertexIdx = hitIdx
         dragPxPerMm = pxPerMm
         dragBounds = { width: cssBounds.width, height: cssBounds.height }
@@ -839,7 +907,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       const viewSize = dragBounds ?? { width: cssBounds.width, height: cssBounds.height }
       // 日本語コメント: マウス位置（mm）を算出し、スナップ適用
       const rawMm = screenToModel({ x: x - panRef.current.x, y: y - panRef.current.y }, viewSize, pxPerMm)
-      const snapApply = snapOptions ?? SNAP_DEFAULTS
+      const snapApply = snapRef.current ?? SNAP_DEFAULTS
       const ptMm = applySnaps(rawMm, { ...snapApply, anchor: { x: 0, y: 0 } })
       const kind = templateRef.current
       if (kind === 'rect') {
@@ -848,7 +916,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         const next = { ...rectRef.current, widthMm: Math.round(newW), heightMm: Math.round(newH) }
         rectRef.current = next
         setRectMm(next)
-        emitShape()
+        emitShapeRef.current?.()
       } else if (kind === 'l') {
         const cur = lRef.current
         const idx = draggingVertexIdx % 6
@@ -879,7 +947,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         const next = { widthMm: Math.round(W), heightMm: Math.round(H), cutWidthMm: Math.round(cw), cutHeightMm: Math.round(ch) }
         lRef.current = next
         setLMm(next)
-        emitShape()
+        emitShapeRef.current?.()
       } else if (kind === 'u') {
         const cur = uRef.current
         const idx = draggingVertexIdx % 8
@@ -897,7 +965,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         const next = { widthMm: Math.round(W), heightMm: Math.round(H), innerWidthMm: Math.round(iw), depthMm: Math.round(d) }
         uRef.current = next
         setUMm(next)
-        emitShape()
+        emitShapeRef.current?.()
       } else if (kind === 't') {
         const cur = tRef.current
         const idx = draggingVertexIdx % 8
@@ -916,7 +984,14 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         const next = { barWidthMm: bw, barThickMm: bt, stemWidthMm: sw, stemHeightMm: sh }
         tRef.current = next
         setTMm(next)
-        emitShape()
+        emitShapeRef.current?.()
+      } else if (kind === 'poly') {
+        const current = polyRef.current ?? []
+        if (!current.length) return
+        const next = current.map((pt, idx) => idx === (draggingVertexIdx ?? -1) ? { x: Math.round(ptMm.x), y: Math.round(ptMm.y) } : { ...pt })
+        polyRef.current = next.map(p => ({ ...p }))
+        setPolyMmState(next.map(p => ({ ...p })))
+        emitShapeRef.current?.()
       }
       draw()
     }
@@ -926,6 +1001,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       window.removeEventListener('mousemove', onMouseMove)
       dragPxPerMm = null
       dragBounds = null
+      pointerDownRef.current = false
     }
 
     canvas.addEventListener('mousedown', onMouseDown)
@@ -934,6 +1010,16 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault()
       const cssBounds = canvas.getBoundingClientRect()
+      if (pointerDownRef.current && draggingVertexIdx == null) {
+        const nextPan = {
+          x: panRef.current.x - ev.deltaX,
+          y: panRef.current.y - ev.deltaY,
+        }
+        panRef.current = nextPan
+        setPan(nextPan)
+        draw()
+        return
+      }
       const cx = ev.clientX - cssBounds.left
       const cy = ev.clientY - cssBounds.top
       const kind = templateRef.current

@@ -1,7 +1,7 @@
 // 寸法線エンジンの最小テスト雛形（実行環境は今後追加）
 // 目的: APIの形と基本ベクトル計算の前提を固定化する
 
-import { DimensionEngine } from '../../../src/core/dimensions/dimension_engine';
+import { DimensionEngine } from '../../../src/core/dimensions/dimension-engine';
 
 describe('DimensionEngine', () => {
   it('generates dimension lines outside each edge (left normal by default)', () => {
@@ -22,4 +22,3 @@ describe('DimensionEngine', () => {
     expect(d.edgeId).toBe('e1');
   });
 });
-
