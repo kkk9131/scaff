@@ -4,6 +4,7 @@ import TopBar from '@/components/TopBar'
 import PreviewOverlay from '@/components/PreviewOverlay'
 import Sidebar, { ViewMode } from '@/components/Sidebar'
 import CanvasArea from '@/components/CanvasArea'
+import ElevationView from '@/components/ElevationView'
 import { createFloor, duplicateFloor, FloorState, randomId, nextFloorName, cloneShape, createDefaultShape } from '@/core/floors'
 import { pickFloorColorsByName } from '@/ui/palette'
 import type { TemplateKind } from '@/core/model'
@@ -240,7 +241,7 @@ export default function Page() {
             onUpdateEaves={(patch) => setFloors(prev => prev.map(f => f.id === activeFloorId ? { ...f, eaves: { ...(f.eaves ?? { enabled:false, amountMm:600, perEdge:{} }), ...patch } } : f))}
           />
         <main className="flex-1">
-          {view === '3d' ? <ThreePlaceholder /> : (
+          {view === 'plan' && (
             <CanvasArea
               key={resetKey}
               template={template}
@@ -250,10 +251,14 @@ export default function Page() {
               onUpdateActiveFloorShape={(id, shape) => setFloors(prev => prev.map(f => f.id === id ? { ...f, shape: shape as any } : f))}
               snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }}
               dimensionOptions={dimensions}
-            eavesOptions={floors.find(f => f.id === activeFloorId)?.eaves}
-            onUpdateEaves={(id, patch) => setFloors(prev => prev.map(f => f.id === id ? { ...f, eaves: { ...(f.eaves ?? { enabled:false, amountMm:600, perEdge:{} }), ...patch } } : f))}
+              eavesOptions={floors.find(f => f.id === activeFloorId)?.eaves}
+              onUpdateEaves={(id, patch) => setFloors(prev => prev.map(f => f.id === id ? { ...f, eaves: { ...(f.eaves ?? { enabled:false, amountMm:600, perEdge:{} }), ...patch } } : f))}
             />
           )}
+          {view === 'elev' && (
+            <ElevationView floors={floors.filter(f => f.visible)} />
+          )}
+          {view === '3d' && <ThreePlaceholder />}
         </main>
       </div>
       {previewOpen && (
