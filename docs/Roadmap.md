@@ -30,9 +30,25 @@ This mirrors `docs/開発ロードマップ.md` and is kept in sync. Japanese is
   - Reset editor to defaults via top-bar menu (done)
 
 ## Full Version (Elevation + 3D)
-- Phase 3: elevations from plan + heights
-- Phase 4: 3D wireframe via extrude + roofs
-- Phase 6: UI polish/animations
+
+### Phase 3: Elevation Automation
+- [x] Generate four elevations from plan + heights (N/E/S/W)
+- [ ] Dimension annotations (wall height / roof apex)
+- [ ] Toggle for dimension overlays via sidebar
+- [ ] Roof generation (flat / gable / hip with slope inputs)
+
+### Phase 4: 3D Wireframe
+- Extrude outer walls
+- Generate roof wireframe (gable / hip / flat)
+- Render via Three.js `LineSegments`
+- Mouse controls (orbit / zoom / pan)
+- Coloring with glow (walls=blue, roof=orange, helpers=gray)
+
+### Phase 6: UI Polish
+- Sidebar expand/collapse animation (Framer Motion)
+- View transitions (plan ⇄ elevation ⇄ 3D)
+- Dimension fade-in/out motion
+- Sidebar icon neo-green glow when active
 
 ## Priorities
 - MVP: Phases 1 + 2 + 5
