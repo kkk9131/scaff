@@ -48,9 +48,12 @@ export const Sidebar: React.FC<{
   onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }>) => void
   eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
   onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
+  // 屋根（統合セクション）
+  roof?: { enabled: boolean; type: 'flat'|'gable'|'hip'|'mono'; parapetHeightMm?: number; pitchSun?: number; ridgeAxis?: 'NS'|'EW'; monoDownhill?: 'N'|'S'|'E'|'W'; apexHeightMm?: number; excludeUpperShadows?: boolean }
+  onUpdateRoof?: (patch: Partial<{ enabled: boolean; type: 'flat'|'gable'|'hip'|'mono'; parapetHeightMm: number; pitchSun: number; ridgeAxis: 'NS'|'EW'; monoDownhill: 'N'|'S'|'E'|'W'; apexHeightMm: number; excludeUpperShadows: boolean }>) => void
 }> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect',
   floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor,
-  snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
+  snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, roof, onUpdateRoof }) => {
   
   // 日本語コメント: モダンな左サイドバー。建築プロ向けのセクション管理
   const [openView, setOpenView] = useState(false)
@@ -59,6 +62,7 @@ export const Sidebar: React.FC<{
   const [openSnap, setOpenSnap] = useState(false)
   const [openDims, setOpenDims] = useState(false)
   const [openEaves, setOpenEaves] = useState(false)
+  const [openRoof, setOpenRoof] = useState(true)
 
   return (
     <aside className={`h-full bg-surface-panel/95 backdrop-blur-sm border-r border-border-default transition-all duration-300 ease-out shadow-panel ${expanded ? 'w-72' : 'w-16'}`}>
@@ -228,6 +232,162 @@ export const Sidebar: React.FC<{
               </div>
             </div>
           )}
+
+        {/* 屋根（統合）セクション */}
+        <div className="space-y-3">
+          <button
+            className="w-full text-sm font-medium text-text-primary flex items-center justify-between bg-surface-elevated hover:bg-surface-hover rounded-lg px-3 py-2.5 border border-border-default transition-all duration-200 group"
+            onClick={() => setOpenRoof(v => !v)}
+            aria-expanded={openRoof}
+            title="屋根設定の開閉"
+          >
+            <div className="flex items-center gap-2">
+              <Building className="w-4 h-4 text-accent-500" />
+              {expanded && <span>屋根</span>}
+            </div>
+            {expanded && (openRoof ? 
+              <ChevronDown className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" /> : 
+              <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" />
+            )}
+          </button>
+          {openRoof && expanded && (
+            <div className="space-y-3 pl-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm text-text-secondary">屋根を有効化</label>
+                <button
+                  className={`w-12 h-7 rounded-full border transition-colors duration-200 flex items-center ${roof?.enabled ? 'bg-accent-500 border-accent-600' : 'bg-surface-hover border-border-default'}`}
+                  onClick={() => onUpdateRoof?.({ enabled: !roof?.enabled })}
+                  title="屋根の有効/無効"
+                >
+                  <span className={`w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-200 ${roof?.enabled ? 'translate-x-5' : 'translate-x-1'}`}></span>
+                </button>
+              </div>
+              {/* 形状選択 */}
+              <div className="space-y-2">
+                <label className="text-xs text-text-tertiary">屋根形状</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['flat','gable','hip','mono'] as const).map(t => (
+                    <button
+                      key={t}
+                      disabled={!roof?.enabled}
+                      onClick={() => onUpdateRoof?.({ type: t })}
+                      className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.type===t ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    >
+                      {t==='flat'?'フラット': t==='gable'?'切妻': t==='hip'?'寄棟':'片流れ'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 形状ごとのパラメータ */}
+              {roof?.type === 'flat' && (
+                <div className="grid grid-cols-2 gap-2 items-center">
+                  <label className="text-xs text-text-tertiary">立上り高さ(mm)</label>
+                  <input
+                    type="number"
+                    step={10}
+                    min={0}
+                    value={roof?.parapetHeightMm ?? 150}
+                    onChange={(e) => onUpdateRoof?.({ parapetHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
+                    disabled={!roof?.enabled}
+                    className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                  />
+                </div>
+              )}
+
+              {/* 立面の上階の陰を除外（ターゲット階の設定） */}
+              <div className="flex items-center justify-between">
+                <label className="text-sm text-text-secondary">立面で上階の陰を除外</label>
+                <button
+                  className={`w-12 h-7 rounded-full border transition-colors duration-200 flex items-center ${roof?.excludeUpperShadows ? 'bg-accent-500 border-accent-600' : 'bg-surface-hover border-border-default'}`}
+                  onClick={() => onUpdateRoof?.({ excludeUpperShadows: !roof?.excludeUpperShadows })}
+                  title="立面図で上階の屋根が覆う部分を非表示にする"
+                  disabled={!roof?.enabled}
+                >
+                  <span className={`w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-200 ${roof?.excludeUpperShadows ? 'translate-x-5' : 'translate-x-1'}`}></span>
+                </button>
+              </div>
+
+              {roof?.type === 'gable' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">勾配（寸）</label>
+                    <input
+                      type="number"
+                      step={0.5}
+                      min={0}
+                      max={15}
+                      value={roof?.pitchSun ?? 4}
+                      onChange={(e) => onUpdateRoof?.({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value)||0)) })}
+                      disabled={!roof?.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">棟方向</label>
+                    <div className="flex items-center gap-2">
+                      {(['NS','EW'] as const).map(ax => (
+                        <button key={ax} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ ridgeAxis: ax })}
+                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.ridgeAxis===ax ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                          {ax}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-text-tertiary">妻面の辺指定はキャンバス操作で行う予定です（後続対応）。</p>
+                </div>
+              )}
+
+              {roof?.type === 'hip' && (
+                <div className="grid grid-cols-2 gap-2 items-center">
+                  <label className="text-xs text-text-tertiary">最高点(mm)</label>
+                  <input
+                    type="number"
+                    step={10}
+                    min={0}
+                    value={roof?.apexHeightMm ?? 0}
+                    onChange={(e) => onUpdateRoof?.({ apexHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
+                    disabled={!roof?.enabled}
+                    className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                  />
+                </div>
+              )}
+
+              {roof?.type === 'mono' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">勾配（寸）</label>
+                    <input
+                      type="number"
+                      step={0.5}
+                      min={0}
+                      max={15}
+                      value={roof?.pitchSun ?? 3}
+                      onChange={(e) => onUpdateRoof?.({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value)||0)) })}
+                      disabled={!roof?.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">流れ方向</label>
+                    <div className="flex items-center gap-2">
+                      {(['N','S','E','W'] as const).map(dir => (
+                        <button key={dir} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ monoDownhill: dir })}
+                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.monoDownhill===dir ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                          {dir}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 下屋の自動抽出は非採用（将来拡張） */}
+
+              <p className="text-xs text-text-tertiary">平面の屋根外形は軒ラインと同一です（点線）。立面は順次反映します。</p>
+            </div>
+          )}
+        </div>
         </div>
 
         {/* ビューセクション */}

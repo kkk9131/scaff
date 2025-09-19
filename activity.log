@@ -430,3 +430,61 @@
 - 共有バウンディングを算出し、4方向の立面を共通スケールで描画
 2025-09-17 00:48: 立面ビューの背景線とスケールを調整
 - 背景矩形の枠線を除去し、全方向の水平軸を共通レンジで描画
+2025-09-17: フェーズ3 屋根生成ロジック要件ヒアリング（仕様確定、実装なし）
+- 対応形状: フラット/切妻/寄棟/片流れ、階ごと複数屋根と下屋
+- 線画: 階の色で点線、既存平面/立面と統一、谷線表示ON（細線）
+- eaves反映/上階の陰除外＝既定ON、重なりはトグルで許容
+- 切妻: 全辺切妻=棟なし扱い、寄棟: byApex、片流れ: ラベルに最高点H併記
+- データモデル/UIフロー/バリデーションの合意（実装は未着手）
+- 設計メモを追加（docs/design/roofing.ja.md、docs/design/roofing.md）
+2025-09-17: 屋根設計メモに実装順/テスト項目を追記（実装なし）
+- docs/design/roofing.ja.md に実装順（フラット→切妻→寄棟→片流れ）とチェックリストを追加
+- テスト項目（幾何/共通・タイプ別・多層/下屋）をチェックボックスで洗い出し
+2025-09-17: 屋根機能スキャフォールド開始（フラット外形・保存スキーマ）
+- 屋根型/データ定義を追加（src/core/roofing/types.ts, index.ts）
+- 外形生成の初期実装（eaves反映：src/core/roofing/compute.ts）
+- 保存スキーマに roofUnits を追加（src/io/persist.ts / floors.ts）
+- チェックリスト更新：オフセット（初期）/保存スキーマ/フラット外形 を完了に変更
+2025-09-17: フラット屋根のUI統合（最小）
+- サイドバーにフラット屋根の有効化/立上り高さ入力を追加（src/components/Sidebar.tsx）
+- 平面キャンバスに屋根外形（階色の点線）とラベル表示を実装（src/components/CanvasArea.tsx）
+- pageに屋根状態のブリッジを実装（追加/更新）（src/app/page.tsx）
+2025-09-17: 平面の屋根外形=軒ラインで統一（重複描画を廃止）
+- Canvasの屋根用輪郭描画を削除し、既存の軒ラインを屋根外形として流用（src/components/CanvasArea.tsx）
+- 設計メモに方針明記（docs/design/roofing.ja.md）
+2025-09-17: 立面にフラット屋根の反映（最小）
+- 高さ上限にパラペット上端を反映（src/core/elevation.ts）
+- 立面で各階のパラペット水平線（階色＋点線）を描画（src/components/ElevationView.tsx）
+- 左側に寸法線を追加（壁高/屋根頂点高）— 既存スタイル準拠
+2025-09-17: 立面のパラペット線を壁頂と接続
+- パラペット上端の水平線を、両端で壁頂（軒高）と点線の縦線で結ぶ（src/components/ElevationView.tsx）
+2025-09-17: サイドバーの屋根設定を統合
+- 屋根セクションで形状（フラット/切妻/寄棟/片流れ）を選択可能に統合（src/components/Sidebar.tsx）
+- ページ側の橋渡しを統合（roofUnits の outer を主屋根としてON/OFF/型・パラメータ更新）（src/app/page.tsx）
+2025-09-17: 立面の軒先と軒天を結ぶコネクタ追加
+- eaves外形の各スパン端と壁スパン端で、パラペット水平線と壁頂を点線で接続（重複防止あり）（src/components/ElevationView.tsx）
+2025-09-17: コネクタの描画仕様を修正（軒先端基準）
+- コネクタは「軒先端（eaves投影スパン端）からフラット高さ分下へ」下ろして軒天へ接続（水平延長ではなく垂直降ろし）（src/components/ElevationView.tsx）
+2025-09-17: 軒先端→軒天の水平ブリッジを追加
+- 垂直降ろし後、最寄りの壁スパン端点へ短い水平線で接続し確実に結合（src/components/ElevationView.tsx）
+2025-09-17: 立面の上階陰除外（1Dスパン差分）
+- eaves外形の投影スパンを上階ユニオンで差し引き、下階パラペット線を自動分割（src/core/elevation.ts, src/components/ElevationView.tsx）
+2025-09-17: 下屋の自動抽出（平面・初期）
+- 矩形外形の階で、上階屋根（eaves込み）BBoxユニオンを差し引き露出帯をfootprint=polygonとして生成（src/core/roofing/lowerRoofs.ts）
+- サイドバーに「下屋を自動抽出」ボタンを追加（src/components/Sidebar.tsx）
+- 平面キャンバスに下屋の軒ライン表示とラベルを追加（src/components/CanvasArea.tsx）
+2025-09-17: 要望により「下屋の自動抽出」を撤回
+- サイドバーのボタンと連動処理を削除（src/components/Sidebar.tsx, src/app/page.tsx）
+- 自動抽出ロジックを削除（src/core/roofing/lowerRoofs.ts）
+- 設計メモを非採用方針に更新（docs/design/roofing.ja.md）
+2025-09-17: 立面の陰除外トグルを追加（屋根ごと）
+- サイドバーに「立面で上階の陰を除外」スイッチを追加し、ターゲット階ごとにON/OFF可能に（src/components/Sidebar.tsx, src/app/page.tsx, src/components/ElevationView.tsx, src/core/elevation.ts）
+2025-09-17: 立面に折れ（稜線）を実線で追加
+- 各水平スパンの両端に縦の実線を描画して、建物の折れを視認可能に（src/components/ElevationView.tsx）
+2025-09-17: 折れ線生成ロジックを改善
+- 各階外形の内側頂点（方向軸の中間値）で縦実線を描画。外周端は除外し、反転/オフセットを考慮（src/components/ElevationView.tsx）
+2025-09-17: ログ最終更新とコミット準備
+- 立面の折れ線（稜線）実線表示を安定化、反転/オフセット対応
+- 屋根UI統合（形状選択＋フラット/切妻/寄棟/片流れの項目）
+- 立面の陰除外トグル（屋根ごと）とパラペット接続の見え方を改善
+- 平面は「屋根外形＝軒ライン」ポリシーで統一、重複線を排除

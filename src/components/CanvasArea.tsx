@@ -10,7 +10,10 @@ import type { FloorState } from '@/core/floors'
 // 寸法線エンジン（画面座標の多角形から外側の寸法線を算出）
 import { DimensionEngine } from '@/core/dimensions/dimension-engine'
 import { signedArea as signedAreaModel, offsetPolygonOuterVariable } from '@/core/eaves/offset'
+// 屋根外形（平面）は「軒の出ライン」と同一として扱う方針のため、
+// ここでは別個の屋根外形描画は行わず、既存の軒ラインを流用する。
 import { outwardNormalModel } from '@/core/geometry/orientation'
+import { applyEavesOffset } from '@/core/roofing'
 import { buildOffsetLines, adjustedSegmentEndpoints } from '@/core/eaves/helpers'
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
 export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState[]; activeFloorId?: string; activeShape?: { kind: TemplateKind; data: any }; onUpdateActiveFloorShape?: (id: string, shape: { kind: TemplateKind; data: any }) => void; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; onUpdateEaves?: (id: string, patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void }> = ({ template = 'rect', floors = [], activeFloorId, activeShape, onUpdateActiveFloorShape, snapOptions, dimensionOptions, eavesOptions, onUpdateEaves }) => {
@@ -277,6 +280,46 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         ctx.strokeStyle = isActive ? col : withAlpha(col, 0.55)
         ctx.stroke()
 
+        // 屋根ラベルは「軒の出ライン」を屋根外形として流用し、その重心付近へ配置する（非アクティブ階）
+        if (!isActive) {
+          const roofs = Array.isArray(f.roofUnits) ? f.roofUnits : []
+          const flat = roofs.find(ru => ru.type === 'flat' && ru.footprint?.kind === 'outer')
+          if (flat) {
+            // ラベル位置: eaves が有効ならオフセット形状の重心、無効なら壁外形の重心
+            let polyForLabel = polyMmTmp
+            if (f.eaves?.enabled) {
+              const perMm = polyMmTmp.map((_, i) => f.eaves?.perEdge?.[i] ?? f.eaves?.amountMm ?? 0)
+              const eavesPolyMm = offsetPolygonOuterVariable(polyMmTmp, perMm, { miterLimit: 8 })
+              polyForLabel = eavesPolyMm as any
+            }
+            const outline = polyForLabel.map(p => {
+              const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+              return { x: s.x + panNow.x, y: s.y + panNow.y }
+            })
+            const cx = outline.reduce((acc, p) => acc + p.x, 0) / outline.length
+            const cy = outline.reduce((acc, p) => acc + p.y, 0) / outline.length
+            ctx.fillStyle = withAlpha(eavesColor, 0.95)
+            ctx.font = '12px ui-sans-serif, system-ui, -apple-system'
+            const text = `フラット（立上り h=${Math.round(flat.parapetHeightMm ?? 150)}mm）`
+            ctx.fillText(text, cx - ctx.measureText(text).width / 2, cy)
+          }
+        }
+
+        // 下屋（polygon footprint）の屋根外形（=軒ライン）を点線で表示（非アクティブ階）
+        if (!isActive) {
+          const roofs = Array.isArray(f.roofUnits) ? f.roofUnits : []
+          for (const ru of roofs) {
+            if (ru.footprint?.kind !== 'polygon') continue
+            const outlineMm = applyEavesOffset((ru.footprint as any).polygon, f, ru as any)
+            const outline = outlineMm.map(p => { const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm); return { x: s.x + panNow.x, y: s.y + panNow.y } })
+            ctx.setLineDash([6,4])
+            ctx.strokeStyle = withAlpha(eavesColor, 0.7)
+            ctx.lineWidth = 2
+            ctx.beginPath(); outline.forEach((s, i) => { if (i===0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y) }); ctx.closePath(); ctx.stroke()
+            ctx.setLineDash([])
+          }
+        }
+
         // 非アクティブ階でも軒の出ラインを点線で表示（視認性確保）。編集はしない。
         if (!isActive && f.eaves?.enabled && (f.eaves.amountMm > 0 || (f.eaves.perEdge && Object.keys(f.eaves.perEdge).length > 0))) {
           const perMm = polyMmTmp.map((_, i) => f.eaves?.perEdge?.[i] ?? f.eaves?.amountMm ?? 0)
@@ -333,6 +376,50 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
           const tx = mid0.x + on.x * offsetPx
           const ty = mid0.y + on.y * offsetPx
           ctx.fillText(`${mmVal} mm`, tx + 4, ty - 4)
+        }
+      }
+
+      // 日本語コメント: アクティブ階の屋根ラベル（外形は既存の軒ラインを流用）
+      const activeFloor = sorted.find(f => f.id === activeFloorIdRef.current)
+      if (activeFloor) {
+        const roofs = Array.isArray(activeFloor.roofUnits) ? activeFloor.roofUnits : []
+        const flat = roofs.find(ru => ru.type === 'flat' && ru.footprint?.kind === 'outer')
+        if (flat) {
+          let polyForLabel = polyMm
+          if (eaves?.enabled && (eaves.amountMm > 0 || (eaves.perEdge && Object.keys(eaves.perEdge).length > 0))) {
+            const perMm = polyMm.map((_, i) => eaves.perEdge?.[i] ?? eaves.amountMm)
+            const eavesPolyMm = offsetPolygonOuterVariable(polyMm, perMm, { miterLimit: 8 })
+            polyForLabel = eavesPolyMm as any
+          }
+          const outline = polyForLabel.map(p => {
+            const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm)
+            return { x: s.x + panNow.x, y: s.y + panNow.y }
+          })
+          const cx = outline.reduce((acc, p) => acc + p.x, 0) / outline.length
+          const cy = outline.reduce((acc, p) => acc + p.y, 0) / outline.length
+          ctx.fillStyle = activePalette.walls ?? COLORS.wall
+          ctx.font = '12px ui-sans-serif, system-ui, -apple-system'
+          const text = `フラット（立上り h=${Math.round(flat.parapetHeightMm ?? 150)}mm）`
+          ctx.fillText(text, cx - ctx.measureText(text).width / 2, cy)
+        }
+
+        // アクティブ階の下屋（polygon footprint）の軒ライン表示
+        for (const ru of roofs) {
+          if (ru.footprint?.kind !== 'polygon') continue
+          const outlineMm = applyEavesOffset((ru.footprint as any).polygon, activeFloor, ru as any)
+          const outline = outlineMm.map(p => { const s = modelToScreen(p, { width: cssBounds.width, height: cssBounds.height }, pxPerMm); return { x: s.x + panNow.x, y: s.y + panNow.y } })
+          ctx.setLineDash([6,4])
+          ctx.lineWidth = 2
+          ctx.strokeStyle = activePalette.walls ?? COLORS.wall
+          ctx.beginPath(); outline.forEach((s, i) => { if (i===0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y) }); ctx.closePath(); ctx.stroke()
+          ctx.setLineDash([])
+          // ラベル
+          const cx = outline.reduce((acc, p) => acc + p.x, 0) / outline.length
+          const cy = outline.reduce((acc, p) => acc + p.y, 0) / outline.length
+          ctx.fillStyle = activePalette.walls ?? COLORS.wall
+          ctx.font = '12px ui-sans-serif, system-ui, -apple-system'
+          const text = `下屋（${Math.round((outlineMm[1].x - outlineMm[0].x) || 0)}×${Math.round((outlineMm[0].y - outlineMm[2].y) || 0)}mm）`
+          ctx.fillText(text, cx - ctx.measureText(text).width / 2, cy)
         }
       }
 

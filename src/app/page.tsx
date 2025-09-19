@@ -11,6 +11,8 @@ import type { TemplateKind } from '@/core/model'
 import ThreePlaceholder from '@/components/ThreePlaceholder'
 import { SNAP_DEFAULTS } from '@/core/snap'
 import { downloadJson, loadFromLocalStorage, parseSaveData, saveToLocalStorage, serializeSaveData, clearLocalStorage, persistFloorToState } from '@/io/persist'
+import type { RoofUnit } from '@/core/roofing'
+// 下屋の自動抽出は非採用（将来拡張）
 
 export default function Page() {
   // 日本語コメント: フェーズ1のUI骨格（上部バー＋左サイドバー＋中央キャンバス）
@@ -239,6 +241,62 @@ export default function Page() {
             // 日本語コメント: 軒の出はフロアごと。サイドバー操作はアクティブ階に反映
             eaves={floors.find(f => f.id === activeFloorId)?.eaves}
             onUpdateEaves={(patch) => setFloors(prev => prev.map(f => f.id === activeFloorId ? { ...f, eaves: { ...(f.eaves ?? { enabled:false, amountMm:600, perEdge:{} }), ...patch } } : f))}
+            // 日本語コメント: 屋根（統合）
+            roof={(() => {
+              const act = floors.find(f => f.id === activeFloorId)
+              const ru = act?.roofUnits?.find(u => u.footprint?.kind === 'outer')
+              if (!ru) return { enabled: false, type: 'flat' as const, parapetHeightMm: 150, ridgeAxis: 'NS' as const, monoDownhill: 'E' as const, pitchSun: 3, apexHeightMm: 0 }
+              return {
+                enabled: true,
+                type: ru.type,
+                parapetHeightMm: ru.parapetHeightMm,
+                pitchSun: ru.pitchSun,
+                ridgeAxis: ru.ridgeAxis as any,
+                monoDownhill: ru.monoDownhill as any,
+                apexHeightMm: ru.apexHeightMm,
+                excludeUpperShadows: ru.excludeUpperShadows ?? true,
+              }
+            })()}
+            onUpdateRoof={(patch) => setFloors(prev => prev.map(f => {
+              if (f.id !== activeFloorId) return f
+              const units = Array.isArray(f.roofUnits) ? [...f.roofUnits] as RoofUnit[] : []
+              const idx = units.findIndex(u => u.footprint?.kind === 'outer')
+              const cur = idx >= 0 ? units[idx] : null
+              const enabled = patch.enabled ?? (cur != null)
+              if (!enabled) {
+                if (idx >= 0) units.splice(idx, 1)
+                return { ...f, roofUnits: units }
+              }
+              const nextType = (patch.type ?? cur?.type ?? 'flat') as RoofUnit['type']
+              const base: RoofUnit = cur ?? {
+                id: 'roof_' + Math.random().toString(36).slice(2, 8),
+                type: nextType,
+                footprint: { kind: 'outer' },
+                excludeUpperShadows: cur?.excludeUpperShadows ?? true,
+              }
+              base.type = nextType
+              // 共通/個別プロパティを更新
+              if (nextType === 'flat') {
+                base.parapetHeightMm = patch.parapetHeightMm ?? base.parapetHeightMm ?? 150
+              }
+              if (nextType === 'gable') {
+                base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 4
+                base.ridgeAxis = (patch.ridgeAxis ?? base.ridgeAxis ?? 'NS') as any
+              }
+              if (nextType === 'hip') {
+                base.mode = 'byApex'
+                base.apexHeightMm = patch.apexHeightMm ?? base.apexHeightMm ?? 0
+              }
+              if (nextType === 'mono') {
+                base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 3
+                base.monoDownhill = (patch.monoDownhill ?? base.monoDownhill ?? 'E') as any
+              }
+              if (typeof patch.excludeUpperShadows === 'boolean') {
+                base.excludeUpperShadows = patch.excludeUpperShadows
+              }
+              if (idx >= 0) units[idx] = base; else units.push(base)
+              return { ...f, roofUnits: units }
+            }))}
           />
         <main className="flex-1">
           {view === 'plan' && (
