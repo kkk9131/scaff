@@ -224,6 +224,27 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                 if (!Number.isFinite(v) || v <= 0) return 0
                 return v / 10 // X寸 = rise:X / run:10
               }
+              // 日本語コメント: 壁スパン端点（長方形の左右端）を取得するためのヘルパ
+              const wallRectsForFloor = rects.filter(r => r.floorId === floor.id)
+              const nearestWallEndpoint = (x: number): number => {
+                if (!wallRectsForFloor.length) return x
+                const endpoints: number[] = []
+                for (const wr of wallRectsForFloor) {
+                  const wStart = wr.start + axisOffset
+                  const wEnd = wr.end + axisOffset
+                  const xs = flip ? (sharedAxisMin + sharedAxisMax - wEnd) : wStart
+                  const xe = flip ? (sharedAxisMin + sharedAxisMax - wStart) : wEnd
+                  endpoints.push(xs, xe)
+                }
+                let best = endpoints[0]
+                let bestD = Math.abs(x - best)
+                for (let k = 1; k < endpoints.length; k++) {
+                  const d = Math.abs(x - endpoints[k])
+                  if (d < bestD) { bestD = d; best = endpoints[k] }
+                }
+                return best
+              }
+
               spans.forEach((s, i) => {
                 const xA = flip ? (sharedAxisMin + sharedAxisMax - s.end) : s.start
                 const xB = flip ? (sharedAxisMin + sharedAxisMax - s.start) : s.end
@@ -244,6 +265,7 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                   }
                   return false
                 }
+                let suppressConnectors = false
                 // 立面トップ形状
                 // 日本語コメント: コネクタ用の端点Y（各端の屋根線の高さ）
                 let yLeftEnd = -wallTop
@@ -286,13 +308,28 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                       lines.push(<line key={`gable-tri-segL-${floor.id}-${i}`} x1={sL} y1={yAt(sL)} x2={xApex} y2={yRidge} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                       lines.push(<line key={`gable-tri-segR-${floor.id}-${i}`} x1={xApex} y1={yRidge} x2={sR} y2={yAt(sR)} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                     }
+                    // 日本語コメント: 壁矩形の水平上端を目立たせないため、背景色で薄く消す
+                    lines.push(<line key={`mask-walltop-${floor.id}-${i}`} x1={sL} y1={-wallTop} x2={sR} y2={-wallTop} stroke={COLORS.surface.elevated} strokeWidth={3} vectorEffect="non-scaling-stroke" />)
                     yLeftEnd = yAt(xLeft); yRightEnd = yAt(xRight)
                   } else {
-                    // 棟方向に正面（フラットな棟ライン）— 代表高さは元のeavesスパン幅から計算
+                    // 棟方向に正面（フラットな棟ライン）— 四角形の上辺を壁端から壁端まで点線で描画
                     const delta = (baseW / 2) * rSun
                     const y = -(wallTop + delta)
-                    lines.push(<line key={`gable-flat-${floor.id}-${i}`} x1={xLeft} y1={y} x2={xRight} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 四角形の上辺は「軒の出を反映した端点」（eaves）で描く
+                    const xl = Math.min(xLeft, xRight)
+                    const xr = Math.max(xLeft, xRight)
+                    lines.push(<line key={`gable-flat-${floor.id}-${i}`} x1={xl} y1={y} x2={xr} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 四角形の縦辺（壁端→棟上辺）を点線で描画
+                    lines.push(<line key={`gable-flat-vl-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={xl} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    lines.push(<line key={`gable-flat-vr-${floor.id}-${i}`} x1={xr} y1={-wallTop} x2={xr} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 日本語コメント: 軒先端（eaves端）と壁頂点（壁端の上端）を“水平”に結ぶ（点線）
+                    const wallL = nearestWallEndpoint(xl)
+                    const wallR = nearestWallEndpoint(xr)
+                    lines.push(<line key={`gable-flat-hconnL-${floor.id}-${i}`} x1={wallL} y1={-wallTop} x2={xl} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    lines.push(<line key={`gable-flat-hconnR-${floor.id}-${i}`} x1={wallR} y1={-wallTop} x2={xr} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                     yLeftEnd = y; yRightEnd = y
+                    // 余計な斜めコネクタは出さない
+                    suppressConnectors = true
                   }
                 } else if (ru.type === 'hip') {
                   // 日本語コメント: 寄棟は全方向で三角形。ただしスパンが壁で分割されても、
@@ -383,12 +420,12 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                 }
                 const nxL = nearestEndpoint(xLeft)
                 const nxR = nearestEndpoint(xRight)
-                if (!coveredByAbove(xLeft) && Math.abs(nxL - xLeft) > 0.1) {
+                if (!suppressConnectors && !coveredByAbove(xLeft) && Math.abs(nxL - xLeft) > 0.1) {
                   // 同一Yで水平に結ぶ。monoなどで端が高い場合は端のYを採用
                   const yConn = yLeftEnd
                   lines.push(<line key={`conn-left-${floor.id}-${direction}-${i}`} x1={xLeft} y1={yConn} x2={nxL} y2={-wallTop} stroke={stroke} strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                 }
-                if (!coveredByAbove(xRight) && Math.abs(nxR - xRight) > 0.1) {
+                if (!suppressConnectors && !coveredByAbove(xRight) && Math.abs(nxR - xRight) > 0.1) {
                   const yConn = yRightEnd
                   lines.push(<line key={`conn-right-${floor.id}-${direction}-${i}`} x1={xRight} y1={yConn} x2={nxR} y2={-wallTop} stroke={stroke} strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                 }
