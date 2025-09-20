@@ -374,6 +374,98 @@ export function buildGableRoofWireStyledFromFloor(floor: FloorState): { solid: S
   return { solid, dashed }
 }
 
+// 日本語コメント: ポリゴンの重心（面積加重）を求める。面積が極小/ゼロ時はバウンディング中心。
+function polygonCentroid(poly: Vec2[]): Vec2 {
+  const n = poly.length
+  if (n < 3) {
+    const avg = poly.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 })
+    return n ? { x: avg.x / n, y: avg.y / n } : { x: 0, y: 0 }
+  }
+  let a = 0, cx = 0, cy = 0
+  for (let i = 0; i < n; i++) {
+    const p = poly[i], q = poly[(i + 1) % n]
+    const cross = p.x * q.y - q.x * p.y
+    a += cross
+    cx += (p.x + q.x) * cross
+    cy += (p.y + q.y) * cross
+  }
+  if (Math.abs(a) < 1e-9) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (const p of poly) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+  }
+  a *= 0.5
+  return { x: cx / (6 * a), y: cy / (6 * a) }
+}
+
+// 日本語コメント: 寄棟（hip）のワイヤーフレーム生成（壁=実線、屋根線=点線）。
+// 仕様: apex（XY=重心、Z=軒高+apex高 もしくは pitch から算出）へ全周の軒端（頂点）を結ぶ。
+export function buildHipRoofWireStyledFromFloor(floor: FloorState): { solid: Segment3D[]; dashed: Segment3D[] } {
+  const basePoly = polygonFromFloor(floor)
+  const n = basePoly.length
+  const base = floor.elevationMm
+  const wallTop = floor.elevationMm + floor.heightMm
+  const units: any[] = Array.isArray((floor as any).roofUnits) ? (floor as any).roofUnits : []
+  const ru = units.find(u => u && u.footprint?.kind === 'outer' && u.type === 'hip')
+  const solid: Segment3D[] = []
+  const dashed: Segment3D[] = []
+  if (n < 3 || !ru) {
+    return { solid: buildPrismWire(basePoly, base, wallTop, 0), dashed }
+  }
+  // 壁プリズムを実線で追加
+  solid.push(...buildPrismWire(basePoly, base, wallTop, 0))
+
+  // eaves 反映外周に沿って軒リング（点線, z=壁上端）
+  const eavePoly = applyEavesOffset(basePoly, floor, ru as any)
+  const nEdges = basePoly.length
+  const def = floor.eaves?.amountMm ?? 0
+  const perEdge = floor.eaves?.perEdge ?? {}
+  const override = (ru as any)?.eavesOverride ?? {}
+  const enabled = override.enabled ?? floor.eaves?.enabled ?? false
+  const distances: number[] = []
+  for (let i = 0; i < nEdges; i++) {
+    const ov = override.perEdge?.[i]
+    const de = perEdge[i]
+    const di = (ov ?? de ?? override.amountMm ?? floor.eaves?.amountMm ?? def) || 0
+    distances.push(enabled ? Math.max(0, di) : 0)
+  }
+  const area = signedAreaModel(basePoly)
+  const lines = buildOffsetLines(basePoly as any, distances, area)
+  for (let i = 0; i < n; i++) {
+    const { start, end } = adjustedSegmentEndpoints(lines as any, distances, i)
+    dashed.push({ a: { x: start.x, y: start.y, z: wallTop }, b: { x: end.x, y: end.y, z: wallTop } })
+  }
+
+  // apex の XY は eaves 外周の重心。高さは pitch 優先、なければ apexHeightMm
+  const apexXY = polygonCentroid(eavePoly)
+  const pitch = Number((ru as any).pitchSun ?? 0)
+  let apexDelta = 0
+  if (pitch > 0) {
+    const r = pitch / 10
+    // 最遠の軒点までの距離を代表runとする
+    let maxRun = 0
+    for (const p of eavePoly) {
+      const dx = p.x - apexXY.x
+      const dy = p.y - apexXY.y
+      const d = Math.hypot(dx, dy)
+      if (d > maxRun) maxRun = d
+    }
+    apexDelta = Math.max(0, maxRun * r)
+  } else if (typeof (ru as any).apexHeightMm === 'number') {
+    apexDelta = Math.max(0, Number((ru as any).apexHeightMm))
+  }
+  const topZ = wallTop + apexDelta
+
+  if (topZ > wallTop + 1e-3) {
+    // 斜材: 各軒頂点→apex へ結ぶ
+    for (const p of eavePoly) {
+      dashed.push({ a: { x: p.x, y: p.y, z: wallTop }, b: { x: apexXY.x, y: apexXY.y, z: topZ } })
+    }
+  }
+
+  return { solid, dashed }
+}
+
 // 日本語コメント: 線分群のバウンディングボックスを返す（mm）
 export function bboxOfSegments(segs: Segment3D[]): { min: Vec3; max: Vec3 } | null {
   if (!segs.length) return null

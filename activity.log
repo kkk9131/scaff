@@ -616,3 +616,7 @@
 - 上階の壁ボリューム（XY=外周, Z=ベース→軒高）内にある屋根線（点線）を非表示化
 - 近似: 屋根線を分割サンプリングして内部区間を除去（性能・視覚のバランス）
 - 対象: フラット/切妻ほか全タイプの屋根線に適用（src/core/wireframe-3d.ts, src/components/Wireframe3D.tsx）
+2025-09-21 01:40: 寄棟（hip）3Dワイヤーを追加
+- apex（重心）へ全周の軒頂点を結ぶ斜材を点線で描画
+- ピッチ指定時は最遠軒距離×(寸/10)で棟高、未指定は apexHeightMm
+- 軒リングはeaves外周に沿って生成（src/core/wireframe-3d.ts, src/components/Wireframe3D.tsx）
