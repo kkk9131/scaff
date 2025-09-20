@@ -466,6 +466,101 @@ export function buildHipRoofWireStyledFromFloor(floor: FloorState): { solid: Seg
   return { solid, dashed }
 }
 
+// 日本語コメント: 片流れ（mono）のワイヤーフレーム生成（壁=実線、屋根境界=点線）。
+// 単一勾配の平面として、eaves 外周の各辺を高さ z = wallTop + ((proj-minProj)/run)*delta で描画する。
+export function buildMonoRoofWireStyledFromFloor(floor: FloorState): { solid: Segment3D[]; dashed: Segment3D[] } {
+  const basePoly = polygonFromFloor(floor)
+  const n = basePoly.length
+  const base = floor.elevationMm
+  const wallTop = floor.elevationMm + floor.heightMm
+  const units: any[] = Array.isArray((floor as any).roofUnits) ? (floor as any).roofUnits : []
+  const ru = units.find(u => u && u.footprint?.kind === 'outer' && u.type === 'mono')
+  const solid: Segment3D[] = []
+  const dashed: Segment3D[] = []
+  if (n < 3 || !ru) {
+    return { solid: buildPrismWire(basePoly, base, wallTop, 0), dashed }
+  }
+  // 壁プリズム（実線）
+  solid.push(...buildPrismWire(basePoly, base, wallTop, 0))
+
+  // eaves 反映外周
+  const eavePoly = applyEavesOffset(basePoly, floor, ru as any)
+  const nEdges = basePoly.length
+  const def = floor.eaves?.amountMm ?? 0
+  const perEdge = floor.eaves?.perEdge ?? {}
+  const override = (ru as any)?.eavesOverride ?? {}
+  const enabled = override.enabled ?? floor.eaves?.enabled ?? false
+  const distances: number[] = []
+  for (let i = 0; i < nEdges; i++) {
+    const ov = override.perEdge?.[i]
+    const de = perEdge[i]
+    const di = (ov ?? de ?? override.amountMm ?? floor.eaves?.amountMm ?? def) || 0
+    distances.push(enabled ? Math.max(0, di) : 0)
+  }
+  const area = signedAreaModel(basePoly)
+  const lines = buildOffsetLines(basePoly as any, distances, area)
+
+  // 勾配方向ベクトル（単位化）。monoDownhill は低い側の方角。
+  const down: 'N'|'S'|'E'|'W' = (ru as any).monoDownhill ?? 'S'
+  let dir = { x: 0, y: -1 }
+  if (down === 'N') dir = { x: 0, y: 1 }
+  else if (down === 'S') dir = { x: 0, y: -1 }
+  else if (down === 'E') dir = { x: 1, y: 0 }
+  else if (down === 'W') dir = { x: -1, y: 0 }
+  const lenDir = Math.hypot(dir.x, dir.y) || 1
+  dir = { x: dir.x / lenDir, y: dir.y / lenDir }
+
+  // プロジェクション範囲（eaves外周の dot(p,dir) の最小～最大）
+  let minProj = Infinity, maxProj = -Infinity
+  for (const p of eavePoly) {
+    const pr = p.x * dir.x + p.y * dir.y
+    if (pr < minProj) minProj = pr
+    if (pr > maxProj) maxProj = pr
+  }
+  const run = Math.max(1e-6, maxProj - minProj)
+  const pitch = Math.max(0, Number((ru as any).pitchSun ?? 0))
+  let delta = 0
+  if (pitch > 0) delta = (pitch / 10) * run
+  else if (typeof (ru as any).apexHeightMm === 'number') delta = Math.max(0, Number((ru as any).apexHeightMm))
+
+  const zAt = (p: Vec2): number => {
+    const pr = p.x * dir.x + p.y * dir.y
+    const t = (pr - minProj) / run // downhill=0 → uphill=1
+    return wallTop + t * delta
+  }
+
+  // 屋根境界（点線）: eaves外周の各辺を zAt で2点に高さを与えて描く
+  for (let i = 0; i < n; i++) {
+    const { start, end } = adjustedSegmentEndpoints(lines as any, distances, i)
+    dashed.push({ a: { x: start.x, y: start.y, z: zAt(start) }, b: { x: end.x, y: end.y, z: zAt(end) } })
+  }
+
+  // 視認性向上: 代表等高線（dot(p,dir)=mid）で内部スライスを一本描画（多角形の交点を結ぶ）
+  const midProj = (minProj + maxProj) / 2
+  const midPts = intersectPolygonWithAxisLine(eavePoly, Math.abs(dir.x) > Math.abs(dir.y) ? { yConst: 0 } : { xConst: 0 }) // placeholder to avoid TS unused; will override below
+  // 実際には dir に直交する線: dot(p,dir)=const の実装がないため、近似として dir に直交する軸（x or y）でスライス。
+  // dir がX優勢→Y=一定のスライス、Y優勢→X=一定のスライス。値は重心に近い中間値で選択。
+  let slicePts: Vec2[] = []
+  if (Math.abs(dir.x) >= Math.abs(dir.y)) {
+    // Y=const: eavePolyのY範囲中心
+    let minY = Infinity, maxY = -Infinity
+    for (const p of eavePoly) { minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+    const yC = (minY + maxY) / 2
+    slicePts = intersectPolygonWithAxisLine(eavePoly, { yConst: yC })
+  } else {
+    let minX = Infinity, maxX = -Infinity
+    for (const p of eavePoly) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x) }
+    const xC = (minX + maxX) / 2
+    slicePts = intersectPolygonWithAxisLine(eavePoly, { xConst: xC })
+  }
+  for (let i = 0; i + 1 < slicePts.length; i += 2) {
+    const a = slicePts[i], b = slicePts[i + 1]
+    dashed.push({ a: { x: a.x, y: a.y, z: zAt(a) }, b: { x: b.x, y: b.y, z: zAt(b) } })
+  }
+
+  return { solid, dashed }
+}
+
 // 日本語コメント: 線分群のバウンディングボックスを返す（mm）
 export function bboxOfSegments(segs: Segment3D[]): { min: Vec3; max: Vec3 } | null {
   if (!segs.length) return null

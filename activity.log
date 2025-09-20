@@ -620,3 +620,7 @@
 - apex（重心）へ全周の軒頂点を結ぶ斜材を点線で描画
 - ピッチ指定時は最遠軒距離×(寸/10)で棟高、未指定は apexHeightMm
 - 軒リングはeaves外周に沿って生成（src/core/wireframe-3d.ts, src/components/Wireframe3D.tsx）
+2025-09-21 01:55: 片流れ（mono）3Dワイヤーを追加
+- 勾配方向（N/S/E/W）の射影に基づき境界線のZを連続的に変化させて描画
+- ピッチ>0なら run×(寸/10)、未設定は apexHeightMm を高側に加算
+- 代表等高線を1本追加して面の傾きを視認化（src/core/wireframe-3d.ts, src/components/Wireframe3D.tsx）
