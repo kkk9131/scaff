@@ -480,8 +480,7 @@ export function buildMonoRoofWireStyledFromFloor(floor: FloorState): { solid: Se
   if (n < 3 || !ru) {
     return { solid: buildPrismWire(basePoly, base, wallTop, 0), dashed }
   }
-  // 壁プリズム（実線）
-  solid.push(...buildPrismWire(basePoly, base, wallTop, 0))
+  // 壁（実線）: 片流れに合わせて壁上端（各頂点ごと）を斜めにする
 
   // eaves 反映外周
   const eavePoly = applyEavesOffset(basePoly, floor, ru as any)
@@ -529,6 +528,28 @@ export function buildMonoRoofWireStyledFromFloor(floor: FloorState): { solid: Se
     return wallTop + t * delta
   }
 
+  // 壁上端Z（各頂点）
+  const zWall: number[] = basePoly.map(p => zAt(p))
+  // ベースリング（水平）
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    const vi = basePoly[i]
+    const vj = basePoly[j]
+    solid.push({ a: { x: vi.x, y: vi.y, z: base }, b: { x: vj.x, y: vj.y, z: base } })
+  }
+  // 上端リング（斜め）
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    const vi = basePoly[i]
+    const vj = basePoly[j]
+    solid.push({ a: { x: vi.x, y: vi.y, z: zWall[i] }, b: { x: vj.x, y: vj.y, z: zWall[j] } })
+  }
+  // 垂直立上り（各頂点）
+  for (let i = 0; i < n; i++) {
+    const vi = basePoly[i]
+    solid.push({ a: { x: vi.x, y: vi.y, z: base }, b: { x: vi.x, y: vi.y, z: zWall[i] } })
+  }
+
   // 屋根境界（点線）: eaves外周の各辺を zAt で2点に高さを与えて描く
   for (let i = 0; i < n; i++) {
     const { start, end } = adjustedSegmentEndpoints(lines as any, distances, i)
@@ -537,7 +558,6 @@ export function buildMonoRoofWireStyledFromFloor(floor: FloorState): { solid: Se
 
   // 視認性向上: 代表等高線（dot(p,dir)=mid）で内部スライスを一本描画（多角形の交点を結ぶ）
   const midProj = (minProj + maxProj) / 2
-  const midPts = intersectPolygonWithAxisLine(eavePoly, Math.abs(dir.x) > Math.abs(dir.y) ? { yConst: 0 } : { xConst: 0 }) // placeholder to avoid TS unused; will override below
   // 実際には dir に直交する線: dot(p,dir)=const の実装がないため、近似として dir に直交する軸（x or y）でスライス。
   // dir がX優勢→Y=一定のスライス、Y優勢→X=一定のスライス。値は重心に近い中間値で選択。
   let slicePts: Vec2[] = []
