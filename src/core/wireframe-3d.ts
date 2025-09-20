@@ -241,6 +241,8 @@ export function buildGableRoofWireStyledFromFloor(floor: FloorState): { solid: S
   const axis: 'NS' | 'EW' = (ru.ridgeAxis ?? 'NS')
   const run = axis === 'NS' ? (maxX - minX) / 2 : (maxY - minY) / 2
   const topZ = wallTop + Math.max(0, run * r)
+  const xMid = (minX + maxX) / 2
+  const yMid = (minY + maxY) / 2
 
   // 点線: 棟線（eaves外周との交差区間を抽出して z=topZ に配置）
   const ridgeSegs2D = ridgeSegmentsForGable(eavePoly, axis)
@@ -336,8 +338,6 @@ export function buildGableRoofWireStyledFromFloor(floor: FloorState): { solid: S
     const v = basePoly[i]
     solid.push({ a: { x: v.x, y: v.y, z: base }, b: { x: v.x, y: v.y, z: wallTop } })
   }
-  const xMid = (minX + maxX) / 2
-  const yMid = (minY + maxY) / 2
   for (let i = 0; i < n; i++) {
     if (isGableEdge(i)) continue
     const { start, end } = adjustedSegmentEndpoints(lines as any, distances, i)
