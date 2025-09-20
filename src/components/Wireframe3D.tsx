@@ -5,7 +5,7 @@ import * as THREE from 'three'
 // @ts-ignore: 型定義は three の examples に含まれるが環境差異を吸収
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FloorState } from '@/core/floors'
-import { buildFlatRoofWireFromFloor, buildFlatRoofWireStyledFromFloor, buildGableRoofWireStyledFromFloor, mmToM, bboxOfSegments } from '@/core/wireframe-3d'
+import { buildFlatRoofWireFromFloor, buildFlatRoofWireStyledFromFloor, buildGableRoofWireStyledFromFloor, cullSegmentsByUpperWalls, mmToM, bboxOfSegments } from '@/core/wireframe-3d'
 import { COLORS } from '@/ui/colors'
 
 const toThreeColor = (hex: string) => new THREE.Color(hex)
@@ -18,9 +18,12 @@ const Wireframe3D: React.FC<{ floors: FloorState[] }> = ({ floors }) => {
     return floors.filter(f => f.visible).map(f => {
       const units: any[] = Array.isArray((f as any).roofUnits) ? (f as any).roofUnits : []
       const outer = units.find(u => u && u.footprint?.kind === 'outer')
-      const styled = outer?.type === 'gable'
+      const styledRaw = outer?.type === 'gable'
         ? buildGableRoofWireStyledFromFloor(f)
         : buildFlatRoofWireStyledFromFloor(f)
+      // 日本語コメント: 上階の壁ボリュームに入り込む屋根線（点線）をカット
+      const dashedCulled = cullSegmentsByUpperWalls(floors, f, styledRaw.dashed)
+      const styled = { solid: styledRaw.solid, dashed: dashedCulled }
       return {
         floor: f,
         all: buildFlatRoofWireFromFloor(f),

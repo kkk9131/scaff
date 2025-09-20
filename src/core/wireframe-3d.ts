@@ -391,3 +391,94 @@ export function bboxOfSegments(segs: Segment3D[]): { min: Vec3; max: Vec3 } | nu
   }
   return { min: { x: minX, y: minY, z: minZ }, max: { x: maxX, y: maxY, z: maxZ } }
 }
+
+// ===== 上階壁ボリュームとの交差クリッピング（屋根線の自然化） =====
+
+// 日本語コメント: 点がポリゴン内にあるか（境界含む）— 射線法 + 境界判定
+function pointInPolygon2D(p: Vec2, poly: Vec2[]): boolean {
+  const n = poly.length
+  if (n < 3) return false
+  const eps = 1e-9
+  // 境界上チェック
+  for (let i = 0; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n]
+    const bax = b.x - a.x, bay = b.y - a.y
+    const pax = p.x - a.x, pay = p.y - a.y
+    const cross = bax * pay - bay * pax
+    if (Math.abs(cross) <= eps) {
+      const dot = pax * (b.x - a.x) + pay * (b.y - a.y)
+      if (dot >= -eps) {
+        const len2 = bax * bax + bay * bay
+        if (dot <= len2 + eps) return true
+      }
+    }
+  }
+  // 射線法: x正方向へレイを飛ばす
+  let inside = false
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y
+    const xj = poly[j].x, yj = poly[j].y
+    const intersect = ((yi > p.y) !== (yj > p.y)) && (p.x < (xj - xi) * (p.y - yi) / (yj - yi + 1e-20) + xi)
+    if (intersect) inside = !inside
+  }
+  return inside
+}
+
+// 日本語コメント: 上階の壁ボリューム（XY=壁外周, Z=階のベース→壁上端）に“入っている”屋根線分を取り除く。
+// 近似手法: 線分を一定ステップで分割し、各小区間の中点が上階ボリューム内ならその区間を捨てる。
+export function cullSegmentsByUpperWalls(allFloors: FloorState[], current: FloorState, segs: Segment3D[]): Segment3D[] {
+  if (!segs.length) return segs
+  const occluders = allFloors
+    .filter(f => f.visible && f.elevationMm > current.elevationMm)
+    .map(f => ({
+      poly: polygonFromFloor(f),
+      zMin: f.elevationMm,
+      zMax: f.elevationMm + f.heightMm,
+    }))
+    .filter(o => o.poly.length >= 3)
+  if (!occluders.length) return segs
+
+  const out: Segment3D[] = []
+  for (const s of segs) {
+    const dx = s.b.x - s.a.x
+    const dy = s.b.y - s.a.y
+    const dz = s.b.z - s.a.z
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz)
+    const steps = Math.max(4, Math.min(256, Math.ceil(len / 800))) // おおよそ 0.8m ごとに分割（最大256）
+    let curStart: Vec3 | null = null
+    const at = (t: number): Vec3 => ({ x: s.a.x + dx * t, y: s.a.y + dy * t, z: s.a.z + dz * t })
+    const isOccludedMid = (t0: number, t1: number): boolean => {
+      const tm = (t0 + t1) / 2
+      const p = at(tm)
+      for (const o of occluders) {
+        if (p.z >= o.zMin - 1e-3 && p.z <= o.zMax + 1e-3) {
+          if (pointInPolygon2D({ x: p.x, y: p.y }, o.poly)) return true
+        }
+      }
+      return false
+    }
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps
+      const t1 = (i + 1) / steps
+      const occluded = isOccludedMid(t0, t1)
+      if (!occluded) {
+        if (curStart === null) curStart = at(t0)
+      } else {
+        if (curStart) {
+          const end = at(t0)
+          if (Math.abs(end.x - curStart.x) + Math.abs(end.y - curStart.y) + Math.abs(end.z - curStart.z) > 1e-6) {
+            out.push({ a: curStart, b: end })
+          }
+          curStart = null
+        }
+      }
+    }
+    if (curStart) {
+      const end = at(1)
+      if (Math.abs(end.x - curStart.x) + Math.abs(end.y - curStart.y) + Math.abs(end.z - curStart.z) > 1e-6) {
+        out.push({ a: curStart, b: end })
+      }
+    }
+  }
+  return out
+}
