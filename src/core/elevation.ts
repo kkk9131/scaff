@@ -90,8 +90,10 @@ export function computeElevationRectsForFloor(floor: FloorState, direction: Elev
       if (Math.abs(end - start) > 1e-3) spans.push({ start, end })
     }
   }
-
   if (!spans.length) return []
+
+  const base = floor.elevationMm
+  const top = base + floor.heightMm
   spans.sort((a, b) => a.start - b.start)
   const merged: Array<{ start: number; end: number }> = []
   for (const span of spans) {
@@ -102,9 +104,6 @@ export function computeElevationRectsForFloor(floor: FloorState, direction: Elev
       merged.push({ ...span })
     }
   }
-
-  const base = floor.elevationMm
-  const top = base + floor.heightMm
   return merged.map(span => ({
     floorId: floor.id,
     direction,
