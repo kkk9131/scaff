@@ -371,30 +371,93 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                   }
                   yLeftEnd = yAt(xLeft); yRightEnd = yAt(xRight)
                 } else if (ru.type === 'mono') {
-                  const rSun = ratioFromSun(ru.pitchSun)
+                  const pitch = Number(ru.pitchSun ?? 0)
+                  const rSun = pitch > 0 ? ratioFromSun(pitch) : 0
+                  const apex = Math.max(0, Number(ru.apexHeightMm ?? 0))
                   // 勾配軸: E/W→X, N/S→Y
                   const slopeAxisIsX = ru.monoDownhill === 'E' || ru.monoDownhill === 'W'
                   if ((axisIsX && slopeAxisIsX) || (!axisIsX && !slopeAxisIsX)) {
-                    // 軸方向に勾配が乗る → 端から端へ直線
-                    const delta = spanW * rSun
-                    // ダウンヒル側が低い
-                    let y1 = -wallTop
-                    let y2 = -(wallTop + delta)
-                    // 軸の正方向とダウンヒル方位で向きを決める
-                    // axisIsX: +方向は東、axis=Y: +方向は北
-                    const downhillPositive = (axisIsX ? (ru.monoDownhill === 'E') : (ru.monoDownhill === 'N'))
-                    if (downhillPositive) {
-                      // 右(上)端が低い
-                      [y1, y2] = [-(wallTop + delta), -wallTop]
-                    }
-                    lines.push(<line key={`mono-${floor.id}-${i}`} x1={xLeft} y1={y1} x2={xRight} y2={y2} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    yLeftEnd = y1; yRightEnd = y2
-                  } else {
-                    // 勾配軸が垂直 → フラットに見える（代表値として高い側の高さで水平線）
-                    const delta = (spanW / 2) * rSun // 代表値
+                    // 棟側は切妻と同じ処理（四角形の点線）
+                    // 基底eavesスパン（未カット）
+                    const sStartAxis = s.start - axisOffset
+                    const sEndAxis = s.end - axisOffset
+                    const base = rawEaveSpans.find(b => sStartAxis >= b.start - 1e-6 && sEndAxis <= b.end + 1e-6) || { start: sStartAxis, end: sEndAxis }
+                    const bx1 = toScreen(base.start)
+                    const bx2 = toScreen(base.end)
+                    // 屋根最高点は「高い側の壁」と一致させる（勾配がある場合は勾配×建物幅、無い場合は最高点）
+                    const runAlongSlope = slopeAxisIsX ? widthX : widthY
+                    const delta = rSun > 0 ? (runAlongSlope * rSun) : apex
                     const y = -(wallTop + delta)
-                    lines.push(<line key={`mono-flat-${floor.id}-${i}`} x1={xLeft} y1={y} x2={xRight} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    const xl = Math.min(xLeft, xRight)
+                    const xr = Math.max(xLeft, xRight)
+                    // 上辺（点線）
+                    lines.push(<line key={`mono-flat-top-${floor.id}-${i}`} x1={xl} y1={y} x2={xr} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 縦辺（点線）
+                    lines.push(<line key={`mono-flat-vl-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={xl} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    lines.push(<line key={`mono-flat-vr-${floor.id}-${i}`} x1={xr} y1={-wallTop} x2={xr} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 壁端→軒先端の水平コネクタ
+                    const wallL = nearestWallEndpoint(xl)
+                    const wallR = nearestWallEndpoint(xr)
+                    lines.push(<line key={`mono-flat-hl-${floor.id}-${i}`} x1={wallL} y1={-wallTop} x2={xl} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    lines.push(<line key={`mono-flat-hr-${floor.id}-${i}`} x1={wallR} y1={-wallTop} x2={xr} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                     yLeftEnd = y; yRightEnd = y
+                    suppressConnectors = true
+                  } else {
+                    // 片流れ面（勾配が画面横方向に見える）
+                    const delta = rSun > 0 ? spanW * rSun : apex
+                    const downhillPositive = (axisIsX ? (ru.monoDownhill === 'E') : (ru.monoDownhill === 'N'))
+                    const highLeft = downhillPositive // 画面左が高いか
+                    const yHigh = -(wallTop + delta)
+                    const yLow = -wallTop
+                    // 現在の立面の“面”をCardinalへ
+                    const faceCard: 'N'|'S'|'E'|'W' = axisIsX ? (direction==='north'?'N':'S') : (direction==='east'?'E':'W')
+                    const opposite = (d: 'N'|'S'|'E'|'W'): 'N'|'S'|'E'|'W' => (d==='N'?'S':d==='S'?'N':d==='E'?'W':'E')
+                    const highFace = opposite((ru.monoDownhill as any) || (axisIsX?'E':'N'))
+                    if (faceCard === highFace) {
+                      // ご要望: 高い面は壁ラインで四角形に（上辺水平）
+                      const xl = Math.min(xLeft, xRight)
+                      const xr = Math.max(xLeft, xRight)
+                      // 既存の最上階の壁上端（-wallTop）をマスクして消す
+                      lines.push(<line key={`mono-high-mask-wall-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={xr} y2={-wallTop} stroke={COLORS.surface.elevated} strokeWidth={3} vectorEffect="non-scaling-stroke" />)
+                      // 上辺：壁内区間は実線、壁外の張出し区間は点線（屋根線は点線でオーバーレイ）
+                      const wallL = nearestWallEndpoint(xLeft)
+                      const wallR = nearestWallEndpoint(xRight)
+                      const inL = Math.max(xl, Math.min(wallL, wallR))
+                      const inR = Math.min(xr, Math.max(wallL, wallR))
+                      if (inR - inL > 1e-3) {
+                        lines.push(<line key={`mono-high-rect-top-solid-${floor.id}-${i}`} x1={inL} y1={yHigh} x2={inR} y2={yHigh} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
+                      }
+                      if (inL - xl > 1e-3) {
+                        lines.push(<line key={`mono-high-rect-top-leftDash-${floor.id}-${i}`} x1={xl} y1={yHigh} x2={inL} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      if (xr - inR > 1e-3) {
+                        lines.push(<line key={`mono-high-rect-top-rightDash-${floor.id}-${i}`} x1={inR} y1={yHigh} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      // 屋根（点線）の上辺を全体にオーバーレイして明示
+                      lines.push(<line key={`mono-high-rect-top-roofdash-${floor.id}-${i}`} x1={xl} y1={yHigh} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" opacity={0.8} />)
+                      // 縦辺（点線）
+                      lines.push(<line key={`mono-high-rect-vl-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={xl} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      lines.push(<line key={`mono-high-rect-vr-${floor.id}-${i}`} x1={xr} y1={-wallTop} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      // 壁ライン（実線）も同じ高さまで延長
+                      lines.push(<line key={`mono-high-wallL-${floor.id}-${i}`} x1={wallL} y1={-wallTop} x2={wallL} y2={yHigh} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
+                      lines.push(<line key={`mono-high-wallR-${floor.id}-${i}`} x1={wallR} y1={-wallTop} x2={wallR} y2={yHigh} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
+                      // 下端（-wallTop）でも、張出し区間を壁端まで水平点線で結ぶ
+                      if (inL - xl > 1e-3) {
+                        lines.push(<line key={`mono-high-bottom-left-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={inL} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      if (xr - inR > 1e-3) {
+                        lines.push(<line key={`mono-high-bottom-right-${floor.id}-${i}`} x1={inR} y1={-wallTop} x2={xr} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      yLeftEnd = yHigh; yRightEnd = yHigh
+                      suppressConnectors = true
+                    } else {
+                      // 低い面側は三角形（従来）+ 高い側の壁延長は不要
+                      const xHigh = highLeft ? xLeft : xRight
+                      const xLow = highLeft ? xRight : xLeft
+                      lines.push(<line key={`mono-tri-slope-${floor.id}-${i}`} x1={xHigh} y1={yHigh} x2={xLow} y2={yLow} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      yLeftEnd = highLeft ? yHigh : yLow
+                      yRightEnd = highLeft ? yLow : yHigh
+                    }
                   }
                 }
                 // 日本語コメント: 軒の出の先端（xLeft/xRight）と壁スパンの端点を結ぶ（点線）。
@@ -432,24 +495,23 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
               })
               return <g key={`roof-shape-${floor.id}-${direction}`}>{lines}</g>
             })}
-            {/* 階高目安ライン */}
-            {floors.filter(f => f.visible).map(f => {
-              const z = -(f.elevationMm + f.heightMm)
+            {/* 最高高さライン（方向別の最大高さ） */}
+            {(() => {
+              const yTop = -actualBounds.topMax
               return (
                 <line
-                  key={`${f.id}-tick-${direction}`}
                   x1={minX}
-                  y1={z}
+                  y1={yTop}
                   x2={minX + width}
-                  y2={z}
+                  y2={yTop}
                   stroke={COLORS.helper}
-                  strokeWidth={1}
-                  strokeDasharray="200 200"
+                  strokeWidth={1.5}
+                  strokeDasharray="8 6"
                   vectorEffect="non-scaling-stroke"
-                  opacity={0.4}
+                  opacity={0.5}
                 />
               )
-            })}
+            })()}
 
             {/* 寸法線（壁高・屋根頂点高=フラットはパラペット） */}
             {floors.filter(f => f.visible).map((f, i) => {

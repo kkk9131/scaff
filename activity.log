@@ -518,5 +518,20 @@
 - 棟側（棟に正面）の四角形上辺・縦辺はeaves端（軒の出を反映した端点）で描くよう修正（台形化を解消）（src/components/ElevationView.tsx）
 2025-09-20: 棟側で軒先端と壁頂点を“水平”に接続
 - 四角形下辺（壁上端）の上で、壁端→軒先端への水平点線コネクタを追加（src/components/ElevationView.tsx）
+2025-09-20: 片流れの立面表現を強化
+- 棟側は切妻と同様に四角形（点線）。壁端→軒先端の水平コネクタも追加
+- 片流れ面（勾配が見える側）は、三角形（点線）の斜辺を描画し、高い側の壁ラインを上へ延長（実線）（src/components/ElevationView.tsx）
+2025-09-20: 片流れ「高い面」で壁ラインを実線で上端まで延長
+- 高い面＝矩形の上辺高さまで、左右の壁縦線（実線）も延長（src/components/ElevationView.tsx）
+2025-09-20: 最高高さラインを追加／中間階ラインを削除
+- 各面の「階高目安ライン（各階天井）」を廃止し、その代わりに当該方向の最高高さで水平点線を描画（src/components/ElevationView.tsx）
+2025-09-20: 片流れ・高い面の張出し区間を点線に、下端も点線で接続
+- 上辺は壁内=実線、壁外（軒の出）=点線。壁端→軒先端の下端（-wallTop）も点線で水平接続（src/components/ElevationView.tsx）
+2025-09-20: 片流れの棟面判定の変更を取り消し
+- 高い面の作図は矩形（先の仕様）で正しいため、直交面の判定を元に戻し高い面で四角形を描画（src/components/ElevationView.tsx）
+2025-09-20: 片流れに最高点入力を追加
+- サイドバーに「最高点(mm)」を追加。monoは勾配（寸）が0のときは apex を採用、>0のときは勾配を優先（src/components/Sidebar.tsx, src/app/page.tsx, src/components/ElevationView.tsx, src/core/elevation.ts）
+2025-09-20: 片流れの方向指定を「高い面」に変更
+- UIは N/S/E/W の高い面を選択可能にし、内部では反対側を monoDownhill にマッピング（保存形式は変更なし）（src/components/Sidebar.tsx）
 2025-09-20: 寄棟の頂点高さデフォルトを改良
 - apexHeightMm が未設定/0のとき、ピッチ（既定4寸）× span/2 から頂点高さを代表値として推定して作図（src/components/ElevationView.tsx）

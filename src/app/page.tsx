@@ -292,6 +292,7 @@ export default function Page() {
               if (nextType === 'mono') {
                 base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 3
                 base.monoDownhill = (patch.monoDownhill ?? base.monoDownhill ?? 'E') as any
+                base.apexHeightMm = patch.apexHeightMm ?? base.apexHeightMm ?? 0
               }
               if (typeof patch.excludeUpperShadows === 'boolean') {
                 base.excludeUpperShadows = patch.excludeUpperShadows

@@ -493,14 +493,31 @@ export const Sidebar: React.FC<{
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2 items-center">
-                    <label className="text-xs text-text-tertiary">流れ方向</label>
+                    <label className="text-xs text-text-tertiary">最高点(mm)</label>
+                    <input
+                      type="number"
+                      step={10}
+                      min={0}
+                      value={roof?.apexHeightMm ?? 0}
+                      onChange={(e) => onUpdateRoof?.({ apexHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
+                      disabled={!roof?.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">高い面</label>
                     <div className="flex items-center gap-2">
-                      {(['N','S','E','W'] as const).map(dir => (
-                        <button key={dir} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ monoDownhill: dir })}
-                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.monoDownhill===dir ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
-                          {dir}
-                        </button>
-                      ))}
+                      {(['N','S','E','W'] as const).map(high => {
+                        const opposite = (d: 'N'|'S'|'E'|'W'): 'N'|'S'|'E'|'W' => (d==='N'?'S':d==='S'?'N':d==='E'?'W':'E')
+                        const currentHigh = roof?.monoDownhill ? opposite(roof.monoDownhill as any) : undefined
+                        const active = currentHigh === high
+                        return (
+                          <button key={high} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ monoDownhill: opposite(high) })}
+                            className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${active ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                            {high}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 </div>

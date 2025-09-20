@@ -273,11 +273,16 @@ export function computeElevationBounds(floors: FloorState[], direction: Elevatio
       }
       // 片流れ
       const mono = units.find(u => u && u.type === 'mono')
-      if (mono && typeof mono.pitchSun === 'number') {
-        const r = Math.max(0, Number(mono.pitchSun)) / 10
-        const axisIsX = mono.monoDownhill === 'E' || mono.monoDownhill === 'W'
-        const run = axisIsX ? widthX : widthY
-        roofTop = Math.max(roofTop, wallTop + run * r)
+      if (mono) {
+        const p = Number((mono as any).pitchSun ?? 0)
+        if (p > 0) {
+          const r = p / 10
+          const axisIsX = mono.monoDownhill === 'E' || mono.monoDownhill === 'W'
+          const run = axisIsX ? widthX : widthY
+          roofTop = Math.max(roofTop, wallTop + run * r)
+        } else if (typeof mono.apexHeightMm === 'number') {
+          roofTop = Math.max(roofTop, wallTop + Math.max(0, Number(mono.apexHeightMm)))
+        }
       }
     }
     topMax = Math.max(topMax, roofTop)
