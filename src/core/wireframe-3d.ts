@@ -207,8 +207,7 @@ export function buildGableRoofWireStyledFromFloor(floor: FloorState): { solid: S
     // 屋根指定がなければ壁プリズムのみ
     return { solid: buildPrismWire(basePoly, base, wallTop, 0), dashed }
   }
-  // 実線: 壁プリズム（ベースリング、壁上端リング、垂直）
-  solid.push(...buildPrismWire(basePoly, base, wallTop, 0))
+  // 実線（壁）は後段で切妻形状に合わせて生成する
 
   // eaves 反映外周を算出（屋根線はこの外周に沿う）
   const eavePoly = applyEavesOffset(basePoly, floor, ru as any)
@@ -291,6 +290,51 @@ export function buildGableRoofWireStyledFromFloor(floor: FloorState): { solid: S
     const a = basePoly[i]; const b = basePoly[(i + 1) % n]
     const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y)
     return axis === 'NS' ? (dy < dx) : (dx < dy)
+  }
+  // 実線: 壁（ベースリング + 上端リング + 垂直）。上端リングは妻面で棟交点をピークとする三角形状に持ち上げる。
+  // ベースリング（水平）
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    const vi = basePoly[i]
+    const vj = basePoly[j]
+    solid.push({ a: { x: vi.x, y: vi.y, z: base }, b: { x: vj.x, y: vj.y, z: base } })
+  }
+  // 上端リング（妻面のみ棟中心線で分割して持ち上げ）
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    const a = basePoly[i]
+    const b = basePoly[j]
+    if (isGableEdge(i) && topZ > wallTop + 1e-6) {
+      let has = false
+      let px = 0, py = 0
+      if (axis === 'NS') {
+        const dx = b.x - a.x
+        if (Math.abs(dx) > 1e-9) {
+          const t = (xMid - a.x) / dx
+          if (t >= -1e-9 && t <= 1 + 1e-9) { has = true; px = xMid; py = a.y + (b.y - a.y) * t }
+        }
+      } else {
+        const dy = b.y - a.y
+        if (Math.abs(dy) > 1e-9) {
+          const t = (yMid - a.y) / dy
+          if (t >= -1e-9 && t <= 1 + 1e-9) { has = true; py = yMid; px = a.x + (b.x - a.x) * t }
+        }
+      }
+      if (has) {
+        const P = { x: px, y: py }
+        solid.push({ a: { x: a.x, y: a.y, z: wallTop }, b: { x: P.x, y: P.y, z: topZ } })
+        solid.push({ a: { x: P.x, y: P.y, z: topZ }, b: { x: b.x, y: b.y, z: wallTop } })
+      } else {
+        solid.push({ a: { x: a.x, y: a.y, z: wallTop }, b: { x: b.x, y: b.y, z: wallTop } })
+      }
+    } else {
+      solid.push({ a: { x: a.x, y: a.y, z: wallTop }, b: { x: b.x, y: b.y, z: wallTop } })
+    }
+  }
+  // 垂直立上り（各頂点）
+  for (let i = 0; i < n; i++) {
+    const v = basePoly[i]
+    solid.push({ a: { x: v.x, y: v.y, z: base }, b: { x: v.x, y: v.y, z: wallTop } })
   }
   const xMid = (minX + maxX) / 2
   const yMid = (minY + maxY) / 2
