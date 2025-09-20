@@ -518,6 +518,14 @@
 - 棟側（棟に正面）の四角形上辺・縦辺はeaves端（軒の出を反映した端点）で描くよう修正（台形化を解消）（src/components/ElevationView.tsx）
 2025-09-20: 棟側で軒先端と壁頂点を“水平”に接続
 - 四角形下辺（壁上端）の上で、壁端→軒先端への水平点線コネクタを追加（src/components/ElevationView.tsx）
+
+2025-09-20: 3D操作性の改善（回転/パン/ズーム）
+- OrbitControlsへ切替（左ドラッグ=回転、右ドラッグ=パン、中/ピンチ/ホイール=ズーム）
+- Shift+ホイールでパン（既定はズーム）、panByPixelsで自然な移動量（src/components/Wireframe3D.tsx）
+
+2025-09-20: パラペット下端の接続を自然に
+- 軒の出オフセット外周に沿ってパラペット下端リング（wallTop）も点線で連続描画
+- 余分な補助コネクタを撤去し、上下リング＋端点の垂直で整った接続に（src/core/wireframe-3d.ts）
 2025-09-20: 片流れの立面表現を強化
 - 棟側は切妻と同様に四角形（点線）。壁端→軒先端の水平コネクタも追加
 - 片流れ面（勾配が見える側）は、三角形（点線）の斜辺を描画し、高い側の壁ラインを上へ延長（実線）（src/components/ElevationView.tsx）
@@ -566,3 +574,30 @@
 - 高い向き=downhillの反対、画面左の方角（北=東/南=西/東=南/西=北）との一致で apexOnLeft を決定（src/components/ElevationView.tsx）
 2025-09-20: 立面表示の緊急安定化（斜辺分割を一旦停止）
 - gable/hip/mono の斜辺分割を撤回し、従来の描画に戻して全方向の破綻を解消（src/components/ElevationView.tsx）
+2025-09-20: フェーズ4 3D線画（矩形フラット屋根）最小実装
+- ブランチ作成（feat/phase4-3d-wireframe-flat-roof）
+- 3Dワイヤーフレーム生成ロジック追加（src/core/wireframe-3d.ts）
+- Wireframe3Dコンポーネント追加（COLORS.wall 準拠の線色）
+- 3DビューをWireframe3Dに差し替え（src/app/page.tsx）
+  
+2025-09-20: L/U/T形状対応（3D線画の可視差向上）
+- フロア別に線分を生成し色分け描画（src/components/Wireframe3D.tsx）
+- L/U/T 形状の外周をそのままプリズム化して3D線画表示
+
+2025-09-20: フラット屋根の立上りを点線化
+- パラペット立上り（壁上端→パラペット上端）を LineDashedMaterial で描画
+- 実線/点線を分離生成（src/core/wireframe-3d.ts）、3D描画更新（src/components/Wireframe3D.tsx）
+
+2025-09-20: 天井ライン=実線・パラペット=点線に統一
+- 天井（壁上端の水平リング）を常に実線化、パラペット上端水平リングを点線化
+- buildFlatRoofWireStyledFromFloor の線種分離を更新（src/core/wireframe-3d.ts）
+
+2025-09-20: 3Dの軒の出対応（フラット）
+- パラペット上端リングと立上りを軒の出オフセット外周に沿って描画
+- バウンディング計算を実線+点線の合成に変更（src/components/Wireframe3D.tsx）
+
+2025-09-20: 壁頂点と軒先端を結ぶ点線コネクタ
+- 天井高さの壁頂点→軒の出先端（パラペット上端）を斜め点線で結ぶ（src/core/wireframe-3d.ts）
+
+2025-09-20: 立面図同様の結び方に修正
+- 斜めコネクタを廃止し、天井高さでの水平点線 + 軒先垂直点線のL字結線へ変更（src/core/wireframe-3d.ts）

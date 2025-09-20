@@ -8,7 +8,7 @@ import ElevationView from '@/components/ElevationView'
 import { createFloor, duplicateFloor, FloorState, randomId, nextFloorName, cloneShape, createDefaultShape } from '@/core/floors'
 import { pickFloorColorsByName } from '@/ui/palette'
 import type { TemplateKind } from '@/core/model'
-import ThreePlaceholder from '@/components/ThreePlaceholder'
+import Wireframe3D from '@/components/Wireframe3D'
 import { SNAP_DEFAULTS } from '@/core/snap'
 import { downloadJson, loadFromLocalStorage, parseSaveData, saveToLocalStorage, serializeSaveData, clearLocalStorage, persistFloorToState } from '@/io/persist'
 import type { RoofUnit } from '@/core/roofing'
@@ -319,7 +319,7 @@ export default function Page() {
           {view === 'elev' && (
             <ElevationView floors={floors.filter(f => f.visible)} />
           )}
-          {view === '3d' && <ThreePlaceholder />}
+          {view === '3d' && <Wireframe3D floors={floors.filter(f => f.visible)} />}
         </main>
       </div>
       {previewOpen && (
