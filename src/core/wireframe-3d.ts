@@ -115,6 +115,265 @@ export function buildFlatRoofWireStyledFromFloor(floor: FloorState): { solid: Se
   return { solid, dashed }
 }
 
+// 日本語コメント: 内部ユーティリティ — ポリゴンに対する軸平行ラインの交点を抽出（x=const または y=const）
+function intersectPolygonWithAxisLine(poly: Vec2[], opt: { xConst?: number; yConst?: number }): Vec2[] {
+  const pts: Vec2[] = []
+  const n = poly.length
+  const hasX = typeof opt.xConst === 'number'
+  const hasY = typeof opt.yConst === 'number'
+  if (!hasX && !hasY) return pts
+  const X = opt.xConst as number
+  const Y = opt.yConst as number
+  const eps = 1e-6
+  for (let i = 0; i < n; i++) {
+    const a = poly[i]
+    const b = poly[(i + 1) % n]
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    if (hasX) {
+      const minX = Math.min(a.x, b.x) - eps
+      const maxX = Math.max(a.x, b.x) + eps
+      if (X < minX || X > maxX) continue
+      if (Math.abs(dx) < eps) {
+        // 垂直辺が x=X 上に重なる場合は端点を追加（後でソート・重複除去）
+        pts.push({ x: X, y: a.y })
+        pts.push({ x: X, y: b.y })
+      } else {
+        const t = (X - a.x) / dx
+        if (t >= -eps && t <= 1 + eps) {
+          const y = a.y + dy * t
+          pts.push({ x: X, y })
+        }
+      }
+    } else if (hasY) {
+      const minY = Math.min(a.y, b.y) - eps
+      const maxY = Math.max(a.y, b.y) + eps
+      if (Y < minY || Y > maxY) continue
+      if (Math.abs(dy) < eps) {
+        // 水平辺が y=Y 上に重なる場合は端点を追加
+        pts.push({ x: a.x, y: Y })
+        pts.push({ x: b.x, y: Y })
+      } else {
+        const t = (Y - a.y) / dy
+        if (t >= -eps && t <= 1 + eps) {
+          const x = a.x + dx * t
+          pts.push({ x, y: Y })
+        }
+      }
+    }
+  }
+  // 重複除去（量子化）
+  const key = (p: Vec2) => `${Math.round((p.x) * 1000)}:${Math.round((p.y) * 1000)}`
+  const uniq: Vec2[] = []
+  const seen = new Set<string>()
+  for (const p of pts) { const k = key(p); if (!seen.has(k)) { seen.add(k); uniq.push(p) } }
+  // ソート: x=const のときは y 昇順、y=const のときは x 昇順
+  uniq.sort((p, q) => hasX ? (p.y - q.y) : (p.x - q.x))
+  return uniq
+}
+
+// 日本語コメント: 軒（eaves）反映外周から切妻屋根の稜線（ridge）セグメントを抽出
+function ridgeSegmentsForGable(eavePoly: Vec2[], axis: 'NS' | 'EW'): { a: Vec2; b: Vec2 }[] {
+  if (eavePoly.length < 3) return []
+  // eaves ポリゴンの中心座標（軸に直交する中線）
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const p of eavePoly) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+  if (axis === 'NS') {
+    const xMid = (minX + maxX) / 2
+    const pts = intersectPolygonWithAxisLine(eavePoly, { xConst: xMid })
+    const segs: { a: Vec2; b: Vec2 }[] = []
+    for (let i = 0; i + 1 < pts.length; i += 2) segs.push({ a: pts[i], b: pts[i + 1] })
+    return segs
+  } else {
+    const yMid = (minY + maxY) / 2
+    const pts = intersectPolygonWithAxisLine(eavePoly, { yConst: yMid })
+    const segs: { a: Vec2; b: Vec2 }[] = []
+    for (let i = 0; i + 1 < pts.length; i += 2) segs.push({ a: pts[i], b: pts[i + 1] })
+    return segs
+  }
+}
+
+// 日本語コメント: 切妻屋根（gable）のワイヤーフレームを生成（実線=壁、点線=屋根線）
+export function buildGableRoofWireStyledFromFloor(floor: FloorState): { solid: Segment3D[]; dashed: Segment3D[] } {
+  const basePoly = polygonFromFloor(floor)
+  const n = basePoly.length
+  const base = floor.elevationMm
+  const wallTop = floor.elevationMm + floor.heightMm
+  const units: any[] = Array.isArray((floor as any).roofUnits) ? (floor as any).roofUnits : []
+  const ru = units.find(u => u && u.footprint?.kind === 'outer' && u.type === 'gable')
+  const solid: Segment3D[] = []
+  const dashed: Segment3D[] = []
+  if (n < 3 || !ru) {
+    // 屋根指定がなければ壁プリズムのみ
+    return { solid: buildPrismWire(basePoly, base, wallTop, 0), dashed }
+  }
+  // 実線: 壁プリズム（ベースリング、壁上端リング、垂直）
+  solid.push(...buildPrismWire(basePoly, base, wallTop, 0))
+
+  // eaves 反映外周を算出（屋根線はこの外周に沿う）
+  const eavePoly = applyEavesOffset(basePoly, floor, ru as any)
+  // per-edge eaves 距離（既定/上書きを反映）
+  const nEdges = basePoly.length
+  const def = floor.eaves?.amountMm ?? 0
+  const perEdge = floor.eaves?.perEdge ?? {}
+  const override = (ru as any)?.eavesOverride ?? {}
+  const enabled = override.enabled ?? floor.eaves?.enabled ?? false
+  const distances: number[] = []
+  for (let i = 0; i < nEdges; i++) {
+    const ov = override.perEdge?.[i]
+    const de = perEdge[i]
+    const di = (ov ?? de ?? override.amountMm ?? floor.eaves?.amountMm ?? def) || 0
+    distances.push(enabled ? Math.max(0, di) : 0)
+  }
+  const area = signedAreaModel(basePoly)
+  const lines = buildOffsetLines(basePoly as any, distances, area)
+
+  // 点線: 軒の出に沿った外周リング（高さ=壁上端）
+  for (let i = 0; i < n; i++) {
+    const { start, end } = adjustedSegmentEndpoints(lines as any, distances, i)
+    dashed.push({ a: { x: start.x, y: start.y, z: wallTop }, b: { x: end.x, y: end.y, z: wallTop } })
+  }
+
+  // 棟線の高さを算出（寸→勾配比。NSならX半幅、EWならY半幅）
+  const pitch = Math.max(0, Number((ru as any).pitchSun ?? 0))
+  const r = pitch / 10
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const p of eavePoly) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+  const axis: 'NS' | 'EW' = (ru.ridgeAxis ?? 'NS')
+  const run = axis === 'NS' ? (maxX - minX) / 2 : (maxY - minY) / 2
+  const topZ = wallTop + Math.max(0, run * r)
+
+  // 点線: 棟線（eaves外周との交差区間を抽出して z=topZ に配置）
+  const ridgeSegs2D = ridgeSegmentsForGable(eavePoly, axis)
+  for (const seg of ridgeSegs2D) {
+    dashed.push({ a: { x: seg.a.x, y: seg.a.y, z: topZ }, b: { x: seg.b.x, y: seg.b.y, z: topZ } })
+  }
+
+  // ユーティリティ: 指定Yでの内側区間（xの偶数/奇数ペア）から、xを含むペア端点を返す
+  const containingIntervalAtY = (y: number, x: number): { xL: number; xR: number } | null => {
+    const xs = intersectPolygonWithAxisLine(eavePoly, { yConst: y }).map(p => p.x).sort((a, b) => a - b)
+    if (xs.length < 2) return null
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      const x0 = xs[i], x1 = xs[i + 1]
+      if (x >= x0 - 1e-6 && x <= x1 + 1e-6) return { xL: x0, xR: x1 }
+    }
+    // 含まれない場合は最も近い区間へクランプ
+    let best: { xL: number; xR: number } | null = null
+    let bestDist = Infinity
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      const x0 = xs[i], x1 = xs[i + 1]
+      const d = x < x0 ? (x0 - x) : (x > x1 ? (x - x1) : 0)
+      if (d < bestDist) { bestDist = d; best = { xL: x0, xR: x1 } }
+    }
+    return best
+  }
+  const containingIntervalAtX = (x: number, y: number): { yB: number; yT: number } | null => {
+    const ys = intersectPolygonWithAxisLine(eavePoly, { xConst: x }).map(p => p.y).sort((a, b) => a - b)
+    if (ys.length < 2) return null
+    for (let i = 0; i + 1 < ys.length; i += 2) {
+      const y0 = ys[i], y1 = ys[i + 1]
+      if (y >= y0 - 1e-6 && y <= y1 + 1e-6) return { yB: y0, yT: y1 }
+    }
+    let best: { yB: number; yT: number } | null = null
+    let bestDist = Infinity
+    for (let i = 0; i + 1 < ys.length; i += 2) {
+      const y0 = ys[i], y1 = ys[i + 1]
+      const d = y < y0 ? (y0 - y) : (y > y1 ? (y - y1) : 0)
+      if (d < bestDist) { bestDist = d; best = { yB: y0, yT: y1 } }
+    }
+    return best
+  }
+
+  // 点線: 非妻面の各「軒端点」から棟へ向かう斜めライン（エッジ両端→棟線へ直交投影）
+  const gableEdges: number[] | undefined = Array.isArray((ru as any).gableEdges) ? (ru as any).gableEdges : undefined
+  const isGableEdge = (i: number): boolean => {
+    if (gableEdges && gableEdges.length) return gableEdges.includes(i)
+    const a = basePoly[i]; const b = basePoly[(i + 1) % n]
+    const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y)
+    return axis === 'NS' ? (dy < dx) : (dx < dy)
+  }
+  const xMid = (minX + maxX) / 2
+  const yMid = (minY + maxY) / 2
+  for (let i = 0; i < n; i++) {
+    if (isGableEdge(i)) continue
+    const { start, end } = adjustedSegmentEndpoints(lines as any, distances, i)
+    const endpoints = [start, end]
+    for (const ep of endpoints) {
+      let target: Vec2 = axis === 'NS' ? { x: xMid, y: ep.y } : { x: ep.x, y: yMid }
+      // 棟線セグメント範囲へクランプ
+      if (ridgeSegs2D.length) {
+        if (axis === 'NS') {
+          // ep.y を含む内側区間の端点範囲で clamp
+          const ints = containingIntervalAtY(ep.y, xMid)
+          if (ints) {
+            const yClamp = ridgeSegs2D.reduce((acc, s) => {
+              const y0 = Math.min(s.a.y, s.b.y), y1 = Math.max(s.a.y, s.b.y)
+              if (ep.y >= y0 - 1e-6 && ep.y <= y1 + 1e-6) return ep.y
+              // 近い端へ
+              const d0 = Math.abs(ep.y - y0), d1 = Math.abs(ep.y - y1)
+              const yNear = d0 < d1 ? y0 : y1
+              return Math.abs(yNear - acc) < Math.abs(ep.y - acc) ? acc : yNear
+            }, ep.y)
+            target = { x: xMid, y: yClamp }
+          }
+        } else {
+          const ints = containingIntervalAtX(ep.x, yMid)
+          if (ints) {
+            const xClamp = ridgeSegs2D.reduce((acc, s) => {
+              const x0 = Math.min(s.a.x, s.b.x), x1 = Math.max(s.a.x, s.b.x)
+              if (ep.x >= x0 - 1e-6 && ep.x <= x1 + 1e-6) return ep.x
+              const d0 = Math.abs(ep.x - x0), d1 = Math.abs(ep.x - x1)
+              const xNear = d0 < d1 ? x0 : x1
+              return Math.abs(xNear - acc) < Math.abs(ep.x - acc) ? acc : xNear
+            }, ep.x)
+            target = { x: xClamp, y: yMid }
+          }
+        }
+      }
+      dashed.push({ a: { x: ep.x, y: ep.y, z: wallTop }, b: { x: target.x, y: target.y, z: topZ } })
+    }
+  }
+
+  // 点線: 妻面（gable）側の「破風（rake）」— 棟端点→同一スライスの軒端点（左右）
+  for (const seg of ridgeSegs2D) {
+    const ends = [seg.a, seg.b]
+    for (const re of ends) {
+      if (axis === 'NS') {
+        const ints = intersectPolygonWithAxisLine(eavePoly, { yConst: re.y }).map(p => p.x).sort((a,b)=>a-b)
+        if (ints.length >= 2) {
+          // re.x（中心xMid）を含む区間を探す
+          let pair: [number, number] | null = null
+          for (let i = 0; i + 1 < ints.length; i += 2) {
+            const x0 = ints[i], x1 = ints[i + 1]
+            if (xMid >= x0 - 1e-6 && xMid <= x1 + 1e-6) { pair = [x0, x1]; break }
+          }
+          if (!pair) pair = [ints[0], ints[ints.length - 1]]
+          const pL = { x: pair[0], y: re.y }
+          const pR = { x: pair[1], y: re.y }
+          dashed.push({ a: { x: re.x, y: re.y, z: topZ }, b: { x: pL.x, y: pL.y, z: wallTop } })
+          dashed.push({ a: { x: re.x, y: re.y, z: topZ }, b: { x: pR.x, y: pR.y, z: wallTop } })
+        }
+      } else {
+        const ints = intersectPolygonWithAxisLine(eavePoly, { xConst: re.x }).map(p => p.y).sort((a,b)=>a-b)
+        if (ints.length >= 2) {
+          let pair: [number, number] | null = null
+          for (let i = 0; i + 1 < ints.length; i += 2) {
+            const y0 = ints[i], y1 = ints[i + 1]
+            if (yMid >= y0 - 1e-6 && yMid <= y1 + 1e-6) { pair = [y0, y1]; break }
+          }
+          if (!pair) pair = [ints[0], ints[ints.length - 1]]
+          const pB = { x: re.x, y: pair[0] }
+          const pT = { x: re.x, y: pair[1] }
+          dashed.push({ a: { x: re.x, y: re.y, z: topZ }, b: { x: pB.x, y: pB.y, z: wallTop } })
+          dashed.push({ a: { x: re.x, y: re.y, z: topZ }, b: { x: pT.x, y: pT.y, z: wallTop } })
+        }
+      }
+    }
+  }
+
+  return { solid, dashed }
+}
+
 // 日本語コメント: 線分群のバウンディングボックスを返す（mm）
 export function bboxOfSegments(segs: Segment3D[]): { min: Vec3; max: Vec3 } | null {
   if (!segs.length) return null
