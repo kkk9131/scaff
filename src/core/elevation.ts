@@ -238,9 +238,47 @@ export function computeElevationBounds(floors: FloorState[], direction: Elevatio
     const wallTop = floor.elevationMm + floor.heightMm
     let roofTop = wallTop
     const units: any[] = Array.isArray((floor as any).roofUnits) ? (floor as any).roofUnits : []
+    // フラット: パラペット上端
     const flat = units.find(u => u && u.type === 'flat')
     if (flat && typeof flat.parapetHeightMm === 'number') {
       roofTop = Math.max(roofTop, wallTop + Math.max(0, flat.parapetHeightMm))
+    }
+    // 切妻・寄棟・片流れの代表高さも上限に反映（立面表示/スケール安定化のため）
+    if (!flat) {
+      // 建物のX/Y寸法（shapeの外周から近似）
+      let minX = Number.POSITIVE_INFINITY, maxX = Number.NEGATIVE_INFINITY
+      let minY = Number.POSITIVE_INFINITY, maxY = Number.NEGATIVE_INFINITY
+      for (const p of outlineWall) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+      const widthX = Math.max(1, maxX - minX)
+      const widthY = Math.max(1, maxY - minY)
+      // 切妻
+      const gable = units.find(u => u && u.type === 'gable')
+      if (gable && typeof gable.pitchSun === 'number') {
+        const r = Math.max(0, Number(gable.pitchSun)) / 10
+        const alongX = (gable.ridgeAxis ?? 'NS') === 'NS' // NS棟→E-Wに勾配
+        const run = alongX ? widthX / 2 : widthY / 2
+        roofTop = Math.max(roofTop, wallTop + run * r)
+      }
+      // 寄棟: 勾配が設定されていれば優先、なければapex高さ
+      const hip = units.find(u => u && u.type === 'hip')
+      if (hip) {
+        const p = Number((hip as any).pitchSun ?? 0)
+        if (p > 0) {
+          const r = p / 10
+          const run = Math.max(widthX, widthY) / 2 // 代表値: 基底幅の半分
+          roofTop = Math.max(roofTop, wallTop + run * r)
+        } else if (typeof hip.apexHeightMm === 'number') {
+          roofTop = Math.max(roofTop, wallTop + Math.max(0, Number(hip.apexHeightMm)))
+        }
+      }
+      // 片流れ
+      const mono = units.find(u => u && u.type === 'mono')
+      if (mono && typeof mono.pitchSun === 'number') {
+        const r = Math.max(0, Number(mono.pitchSun)) / 10
+        const axisIsX = mono.monoDownhill === 'E' || mono.monoDownhill === 'W'
+        const run = axisIsX ? widthX : widthY
+        roofTop = Math.max(roofTop, wallTop + run * r)
+      }
     }
     topMax = Math.max(topMax, roofTop)
   }

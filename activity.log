@@ -488,3 +488,31 @@
 - 屋根UI統合（形状選択＋フラット/切妻/寄棟/片流れの項目）
 - 立面の陰除外トグル（屋根ごと）とパラペット接続の見え方を改善
 - 平面は「屋根外形＝軒ライン」ポリシーで統一、重複線を排除
+2025-09-20: 寄棟の立面表現を改善（phase3）
+- 立面で寄棟の棟方向に応じた描画（水平棟＋左右勾配／直交側は三角）を実装（src/components/ElevationView.tsx）
+- 寄棟の棟方向UIを追加（未指定時は長辺自動）（src/components/Sidebar.tsx）
+- 立面の高さ上限に切妻/寄棟/片流れの頂点高を反映（src/core/elevation.ts）
+- 寄棟の棟方向プロパティをページ側で橋渡し（src/app/page.tsx）
+2025-09-20: 寄棟の立面仕様を「全方向三角形」に統一
+- ElevationViewで寄棟は常に中央頂点の三角形として描画（src/components/ElevationView.tsx）
+2025-09-20: 立面の屋根シルエットに軒の出を反映
+- 非フラット屋根（切妻/寄棟/片流れ）の立面描画で、壁スパンではなくeaves外周の投影スパンを使用（上階の陰は設定に応じて差し引き）（src/components/ElevationView.tsx）
+2025-09-20: 直前の「上階壁でのクリップ」を取り消し
+- 影の処理を従来どおり上階屋根（eavesユニオン）ベースに戻し、寄棟の描画もスパン中央頂点の三角形に復帰（src/components/ElevationView.tsx）
+2025-09-20: 非フラット屋根の重なりを「直上階の壁」で非表示
+- 立面の非フラット屋根は基本描画するが、直上階（例: 1F→2F）の壁スパンと重なる区間のみカット。複数階上は対象外（src/components/ElevationView.tsx）
+2025-09-20: 分割描画時の寄棟/切妻の多重三角形を解消
+- eavesスパンを壁で分割しても、頂点位置を“元スパン中央”で固定し、区間ごとにプロファイルを切り出して描画。局所三角形が左右に発生しないように修正（src/components/ElevationView.tsx）
+2025-09-20: 寄棟の勾配入力を追加（0.5寸刻み、最大15寸）
+- サイドバー寄棟設定に「勾配（寸）」入力を追加（step=0.5, 0..15）（src/components/Sidebar.tsx）
+- hipはpitchSunを優先して頂点高さを計算（未設定時はapexHeightMm）（src/components/ElevationView.tsx, src/core/elevation.ts, src/app/page.tsx）
+2025-09-20: コネクタを直上階の壁内では描画しないよう抑制
+- eaves端が直上階の壁スパンの内側にある場合、軒先→壁頂点のコネクタ線は描画しない（src/components/ElevationView.tsx）
+2025-09-20: サイドバーの並び替えとビューの簡易トグル化
+- 並び: ビュー → テンプレート → 階層 → 屋根 → 軒の出 → 寸法線 → スナップ（src/components/Sidebar.tsx）
+- ビューはクリックで 平面→立面→3D と順送り切替。旧ビュー/テンプレ/スナップの位置は再配置（src/components/Sidebar.tsx）
+2025-09-20: 屋根と軒の出の統合セクション
+- 屋根セクション内に「軒の出（有効/出幅mm）」を統合。単独の軒の出セクションは削除（src/components/Sidebar.tsx）
+- 操作フロー: 形状選択 → 軒の出値 → 勾配/最高点 → 方向（切妻/片流れ）
+2025-09-20: 寄棟の頂点高さデフォルトを改良
+- apexHeightMm が未設定/0のとき、ピッチ（既定4寸）× span/2 から頂点高さを代表値として推定して作図（src/components/ElevationView.tsx）

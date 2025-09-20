@@ -286,6 +286,8 @@ export default function Page() {
               if (nextType === 'hip') {
                 base.mode = 'byApex'
                 base.apexHeightMm = patch.apexHeightMm ?? base.apexHeightMm ?? 0
+                base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 4
+                base.ridgeAxis = (patch.ridgeAxis ?? base.ridgeAxis ?? 'NS') as any
               }
               if (nextType === 'mono') {
                 base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 3
