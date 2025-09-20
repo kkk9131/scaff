@@ -338,29 +338,23 @@ export function buildGableRoofWireStyledFromFloor(floor: FloorState): { solid: S
     const v = basePoly[i]
     solid.push({ a: { x: v.x, y: v.y, z: base }, b: { x: v.x, y: v.y, z: wallTop } })
   }
-  // 日本語コメント: 「垂直→屋根に沿って」— 非妻面の各“壁頂点”から、まず垂直に屋根面まで上げ、その後屋根面に沿って棟へ結ぶ
-  const roofZAt = (p: Vec2): number => {
-    // NS棟: x差分に比例 / EW棟: y差分に比例（両サイドの屋根面の上包络とみなす）
-    return axis === 'NS' ? (wallTop + r * Math.abs(p.x - xMid)) : (wallTop + r * Math.abs(p.y - yMid))
-  }
+  // 日本語コメント: 非妻面の各「軒端点」から棟へ向かう斜めライン（端点→棟中心線へ直交投影）
   for (let i = 0; i < n; i++) {
     if (isGableEdge(i)) continue
-    const verts = [basePoly[i], basePoly[(i + 1) % n]]
-    for (const ep of verts) {
-      // 1) 垂直（壁天端→屋根面）
-      const zOnRoof = roofZAt(ep)
-      if (zOnRoof > wallTop + 1e-6) {
-        dashed.push({ a: { x: ep.x, y: ep.y, z: wallTop }, b: { x: ep.x, y: ep.y, z: zOnRoof } })
-      }
-      // 2) 屋根面に沿って棟へ
+    const { start, end } = adjustedSegmentEndpoints(lines as any, distances, i)
+    const endpoints = [start, end]
+    for (const ep of endpoints) {
       let target: Vec2 = axis === 'NS' ? { x: xMid, y: ep.y } : { x: ep.x, y: yMid }
+      // 棟線セグメント範囲へクランプ
       if (ridgeSegs2D.length) {
         if (axis === 'NS') {
+          // ep.y を含む内側区間の端点範囲で clamp
           const ints = containingIntervalAtY(ep.y, xMid)
           if (ints) {
             const yClamp = ridgeSegs2D.reduce((acc, s) => {
               const y0 = Math.min(s.a.y, s.b.y), y1 = Math.max(s.a.y, s.b.y)
               if (ep.y >= y0 - 1e-6 && ep.y <= y1 + 1e-6) return ep.y
+              // 近い端へ
               const d0 = Math.abs(ep.y - y0), d1 = Math.abs(ep.y - y1)
               const yNear = d0 < d1 ? y0 : y1
               return Math.abs(yNear - acc) < Math.abs(ep.y - acc) ? acc : yNear
@@ -381,7 +375,7 @@ export function buildGableRoofWireStyledFromFloor(floor: FloorState): { solid: S
           }
         }
       }
-      dashed.push({ a: { x: ep.x, y: ep.y, z: zOnRoof }, b: { x: target.x, y: target.y, z: topZ } })
+      dashed.push({ a: { x: ep.x, y: ep.y, z: wallTop }, b: { x: target.x, y: target.y, z: topZ } })
     }
   }
 
