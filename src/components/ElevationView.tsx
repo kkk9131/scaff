@@ -413,34 +413,63 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                     const faceCard: 'N'|'S'|'E'|'W' = axisIsX ? (direction==='north'?'N':'S') : (direction==='east'?'E':'W')
                     const opposite = (d: 'N'|'S'|'E'|'W'): 'N'|'S'|'E'|'W' => (d==='N'?'S':d==='S'?'N':d==='E'?'W':'E')
                     const highFace = opposite((ru.monoDownhill as any) || (axisIsX?'E':'N'))
-                    // サイド面（直交面）は壁上端を三角の実線にする
-                    // 左右どちらが高いかを方位から決定
-                    const leftCard = ((): 'N'|'S'|'E'|'W' => (
-                      direction==='east'? 'S' : direction==='west'? 'N' : direction==='south'? 'W' : 'E'
-                    ))()
-                    const rightCard = opposite(leftCard)
-                    const yLeftWall = leftCard === highFace ? yHigh : yLow
-                    const yRightWall = rightCard === highFace ? yHigh : yLow
-                    // 壁端座標（壁スパン端の上）
-                    const wallL = nearestWallEndpoint(xLeft)
-                    const wallR = nearestWallEndpoint(xRight)
-                    // 既存の水平壁上端線を局所的にマスク
-                    lines.push(<line key={`mono-side-mask-${floor.id}-${i}`} x1={Math.min(wallL, wallR)} y1={-wallTop} x2={Math.max(wallL, wallR)} y2={-wallTop} stroke={COLORS.surface.elevated} strokeWidth={3} vectorEffect="non-scaling-stroke" />)
-                    // 壁上端（実線の三角）
-                    lines.push(<line key={`mono-side-walltop-${floor.id}-${i}`} x1={wallL} y1={yLeftWall} x2={wallR} y2={yRightWall} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
-                    // 屋根（点線）は軒先端（eaves端）間に斜辺で重ねる
-                    const xHigh = (yLeftWall < yRightWall) ? xRight : xLeft
-                    const xLow = (yLeftWall < yRightWall) ? xLeft : xRight
-                    lines.push(<line key={`mono-side-roof-${floor.id}-${i}`} x1={xHigh} y1={yHigh} x2={xLow} y2={yLow} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    // 張出しの下端（-wallTop）を壁端→軒先端まで点線で接続
+                    // サイド面（直交面）は矩形：高い面=実線の四角形、低い面=点線の四角形
                     const xl = Math.min(xLeft, xRight)
                     const xr = Math.max(xLeft, xRight)
-                    const inL = Math.max(xl, Math.min(wallL, wallR))
-                    const inR = Math.min(xr, Math.max(wallL, wallR))
-                    if (inL - xl > 1e-3) lines.push(<line key={`mono-side-bottom-left-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={inL} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    if (xr - inR > 1e-3) lines.push(<line key={`mono-side-bottom-right-${floor.id}-${i}`} x1={inR} y1={-wallTop} x2={xr} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    yLeftEnd = yLeftWall
-                    yRightEnd = yRightWall
+                    if (faceCard === highFace) {
+                      // 高い面：壁内は実線、張出しは点線。縦辺は壁端で実線を上へ延長
+                      const wallL = nearestWallEndpoint(xLeft)
+                      const wallR = nearestWallEndpoint(xRight)
+                      const inL = Math.min(wallL, wallR)
+                      const inR = Math.max(wallL, wallR)
+                      // 天井水平線（壁内）を見せないようマスク
+                      lines.push(<line key={`mono-side-high-mask-${floor.id}-${i}`} x1={Math.min(wallL, wallR)} y1={-wallTop} x2={Math.max(wallL, wallR)} y2={-wallTop} stroke={COLORS.surface.elevated} strokeWidth={3} vectorEffect="non-scaling-stroke" />)
+                      // 上辺（壁内=実線、壁外=点線）
+                      // 中間（壁内）の水平線は描かない
+                      // 上端：壁内(inL-inR)は実線、壁外(軒の出)は点線
+                      if (inR - inL > 1e-3) {
+                        lines.push(<line key={`mono-side-high-top-solid-${floor.id}-${i}`} x1={inL} y1={yHigh} x2={inR} y2={yHigh} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
+                      }
+                      if (inL - xl > 1e-3) {
+                        lines.push(<line key={`mono-side-high-top-leftDash-${floor.id}-${i}`} x1={xl} y1={yHigh} x2={inL} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      if (xr - inR > 1e-3) {
+                        lines.push(<line key={`mono-side-high-top-rightDash-${floor.id}-${i}`} x1={inR} y1={yHigh} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      // 垂直点線（軒先端→2F天井位置）
+                      if (Math.abs(inL - xl) > 1e-3) {
+                        lines.push(<line key={`mono-side-high-vert-leftDash-${floor.id}-${i}`} x1={xl} y1={yHigh} x2={xl} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      if (Math.abs(xr - inR) > 1e-3) {
+                        lines.push(<line key={`mono-side-high-vert-rightDash-${floor.id}-${i}`} x1={xr} y1={yHigh} x2={xr} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      // 壁の縦ライン（壁端で実線を上へ延長）
+                      lines.push(<line key={`mono-side-high-wallL-${floor.id}-${i}`} x1={inL} y1={-wallTop} x2={inL} y2={yHigh} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
+                      lines.push(<line key={`mono-side-high-wallR-${floor.id}-${i}`} x1={inR} y1={-wallTop} x2={inR} y2={yHigh} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
+                      // 軒の出先端と壁頂点（壁端上端）を水平点線で結ぶ（左右）
+                      if (Math.abs(wallL - xl) > 0.1) {
+                        lines.push(<line key={`mono-side-high-hl-${floor.id}-${i}`} x1={Math.min(wallL, xl)} y1={-wallTop} x2={Math.max(wallL, xl)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      if (Math.abs(wallR - xr) > 0.1) {
+                        lines.push(<line key={`mono-side-high-hr-${floor.id}-${i}`} x1={Math.min(wallR, xr)} y1={-wallTop} x2={Math.max(wallR, xr)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                    } else {
+                      // 低い面：点線の四角形（eaves端で上辺、縦辺）
+                      lines.push(<line key={`mono-side-low-top-${floor.id}-${i}`} x1={xl} y1={yHigh} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      lines.push(<line key={`mono-side-low-vl-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={xl} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      lines.push(<line key={`mono-side-low-vr-${floor.id}-${i}`} x1={xr} y1={-wallTop} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      // 低い面も左右とも壁端→軒先端を水平点線で結ぶ
+                      const wallL = nearestWallEndpoint(xLeft)
+                      const wallR = nearestWallEndpoint(xRight)
+                      if (Math.abs(wallL - xl) > 0.1) {
+                        lines.push(<line key={`mono-side-low-hl-${floor.id}-${i}`} x1={Math.min(wallL, xl)} y1={-wallTop} x2={Math.max(wallL, xl)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                      if (Math.abs(wallR - xr) > 0.1) {
+                        lines.push(<line key={`mono-side-low-hr-${floor.id}-${i}`} x1={Math.min(wallR, xr)} y1={-wallTop} x2={Math.max(wallR, xr)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      }
+                    }
+                    yLeftEnd = yHigh
+                    yRightEnd = yHigh
                     suppressConnectors = true
                   }
                 }

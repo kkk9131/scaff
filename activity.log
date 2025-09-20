@@ -535,3 +535,7 @@
 - UIは N/S/E/W の高い面を選択可能にし、内部では反対側を monoDownhill にマッピング（保存形式は変更なし）（src/components/Sidebar.tsx）
 2025-09-20: 寄棟の頂点高さデフォルトを改良
 - apexHeightMm が未設定/0のとき、ピッチ（既定4寸）× span/2 から頂点高さを代表値として推定して作図（src/components/ElevationView.tsx）
+2025-09-20: サイド面（高い/低い）で軒先端と壁頂点を水平点線で接続
+- 高い面=実線四角形・低い面=点線四角形の双方で、左右の壁端→軒先端を水平点線で結ぶ（src/components/ElevationView.tsx）
+2025-09-20: サイド面（高い面）の上辺内側の水平線を削除
+- 高い面は壁端の実線縦ラインのみ上端まで延長し、上辺は軒の出区間のみ点線を描画。壁内の水平線は描かない（src/components/ElevationView.tsx）
