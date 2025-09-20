@@ -10,6 +10,21 @@ export type PersistVec2 = { x: number; y: number }
 export type PersistEaves = { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
 export type PersistColor = { walls?: string; eaves?: string }
 export type PersistWalls = { outer: PersistVec2[]; holes?: PersistVec2[][] }
+export type PersistRoofUnit = {
+  id: string
+  type: 'flat' | 'gable' | 'hip' | 'mono'
+  mode?: 'byPitch' | 'byApex'
+  pitchSun?: number
+  ridgeAxis?: 'NS' | 'EW'
+  gableEdges?: number[]
+  monoDownhill?: 'N' | 'S' | 'E' | 'W'
+  apexHeightMm?: number
+  parapetHeightMm?: number
+  footprint: { kind: 'outer' } | { kind: 'polygon'; polygon: PersistVec2[] }
+  eavesOverride?: { enabled?: boolean; amountMm?: number; perEdge?: Record<number, number> }
+  excludeUpperShadows?: boolean
+}
+
 export type PersistFloor = {
   id: string
   name: string
@@ -22,6 +37,7 @@ export type PersistFloor = {
   shape?: { kind: 'rect'|'l'|'u'|'t'|'poly'; data: any }
   visible?: boolean
   locked?: boolean
+  roofUnits?: PersistRoofUnit[]
 }
 export type SaveFile = {
   app: 'scaff'
@@ -51,6 +67,20 @@ export function floorToPersist(f: FloorState): PersistFloor {
     shape: f.shape ? { kind: f.shape.kind, data: f.shape.kind === 'poly' ? { vertices: outerCCW.map(p => ({ ...p })) } : { ...f.shape.data } } : undefined,
     visible: f.visible,
     locked: f.locked,
+    roofUnits: Array.isArray(f.roofUnits) ? f.roofUnits.map(ru => ({
+      id: ru.id,
+      type: ru.type,
+      mode: ru.mode,
+      pitchSun: ru.pitchSun,
+      ridgeAxis: ru.ridgeAxis,
+      gableEdges: ru.gableEdges,
+      monoDownhill: ru.monoDownhill,
+      apexHeightMm: ru.apexHeightMm,
+      parapetHeightMm: ru.parapetHeightMm,
+      footprint: ru.footprint.kind === 'outer' ? { kind: 'outer' } : { kind: 'polygon', polygon: (ru.footprint as any).polygon.map((p: any) => ({ x: p.x, y: p.y })) },
+      eavesOverride: ru.eavesOverride ? { enabled: ru.eavesOverride.enabled, amountMm: ru.eavesOverride.amountMm, perEdge: ru.eavesOverride.perEdge } : undefined,
+      excludeUpperShadows: ru.excludeUpperShadows,
+    })) : undefined,
   }
 }
 
@@ -70,6 +100,20 @@ export function persistFloorToState(pf: PersistFloor): FloorState {
     color: pf.color,
     shape,
     eaves,
+    roofUnits: Array.isArray(pf.roofUnits) ? pf.roofUnits.map(ru => ({
+      id: ru.id,
+      type: ru.type as any,
+      mode: ru.mode as any,
+      pitchSun: ru.pitchSun,
+      ridgeAxis: ru.ridgeAxis as any,
+      gableEdges: Array.isArray(ru.gableEdges) ? ru.gableEdges.slice() : undefined,
+      monoDownhill: ru.monoDownhill as any,
+      apexHeightMm: ru.apexHeightMm,
+      parapetHeightMm: ru.parapetHeightMm,
+      footprint: ru.footprint.kind === 'outer' ? { kind: 'outer' } : { kind: 'polygon', polygon: (ru.footprint as any).polygon.map((p: any) => ({ x: p.x, y: p.y })) },
+      eavesOverride: ru.eavesOverride ? { enabled: ru.eavesOverride.enabled, amountMm: ru.eavesOverride.amountMm, perEdge: ru.eavesOverride.perEdge } : undefined,
+      excludeUpperShadows: ru.excludeUpperShadows ?? true,
+    })) : [],
   })
 }
 
@@ -124,6 +168,16 @@ function validatePersistFloor(obj: any): obj is PersistFloor {
     if (obj.shape.kind === 'poly') {
       const verts = obj.shape.data.vertices
       if (!Array.isArray(verts) || !verts.every(isVec2)) return false
+    }
+  }
+  if (obj.roofUnits) {
+    if (!Array.isArray(obj.roofUnits)) return false
+    for (const ru of obj.roofUnits) {
+      if (!ru || typeof ru.id !== 'string' || !['flat','gable','hip','mono'].includes(ru.type)) return false
+      if (!ru.footprint || (ru.footprint.kind !== 'outer' && ru.footprint.kind !== 'polygon')) return false
+      if (ru.footprint.kind === 'polygon') {
+        if (!Array.isArray((ru.footprint as any).polygon) || !(ru.footprint as any).polygon.every(isVec2)) return false
+      }
     }
   }
   return true

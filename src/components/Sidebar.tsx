@@ -48,17 +48,21 @@ export const Sidebar: React.FC<{
   onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }>) => void
   eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
   onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
+  // 屋根（統合セクション）
+  roof?: { enabled: boolean; type: 'flat'|'gable'|'hip'|'mono'; parapetHeightMm?: number; pitchSun?: number; ridgeAxis?: 'NS'|'EW'; monoDownhill?: 'N'|'S'|'E'|'W'; apexHeightMm?: number; excludeUpperShadows?: boolean }
+  onUpdateRoof?: (patch: Partial<{ enabled: boolean; type: 'flat'|'gable'|'hip'|'mono'; parapetHeightMm: number; pitchSun: number; ridgeAxis: 'NS'|'EW'; monoDownhill: 'N'|'S'|'E'|'W'; apexHeightMm: number; excludeUpperShadows: boolean }>) => void
 }> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect',
   floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor,
-  snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves }) => {
+  snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, roof, onUpdateRoof }) => {
   
   // 日本語コメント: モダンな左サイドバー。建築プロ向けのセクション管理
-  const [openView, setOpenView] = useState(false)
+  // ビューは簡易トグル化したため openView は廃止
   const [openTemplate, setOpenTemplate] = useState(false)
   const [openFloors, setOpenFloors] = useState(true)
   const [openSnap, setOpenSnap] = useState(false)
   const [openDims, setOpenDims] = useState(false)
   const [openEaves, setOpenEaves] = useState(false)
+  const [openRoof, setOpenRoof] = useState(true)
 
   return (
     <aside className={`h-full bg-surface-panel/95 backdrop-blur-sm border-r border-border-default transition-all duration-300 ease-out shadow-panel ${expanded ? 'w-72' : 'w-16'}`}>
@@ -80,6 +84,66 @@ export const Sidebar: React.FC<{
 
       {/* メインコンテンツ */}
       <div className="p-4 space-y-4 overflow-y-auto h-[calc(100%-3.5rem)]">
+
+        {/* ビュー（クリックで順送り） */}
+        <div className="space-y-3">
+          <button
+            className={`w-full text-sm font-medium text-text-primary flex items-center justify-between rounded-lg px-3 py-2.5 border transition-all duration-200 ${expanded ? 'bg-surface-elevated hover:bg-surface-hover border-border-default' : 'bg-surface-elevated border-border-default'}`}
+            onClick={() => {
+              const next = current === 'plan' ? 'elev' : current === 'elev' ? '3d' : 'plan'
+              onSelectView?.(next)
+            }}
+            title="クリックで 平面→立面→3D→… と切替"
+          >
+            <div className="flex items-center gap-2">
+              {current==='plan'? <Square className="w-4 h-4 text-accent-500" /> : current==='elev'? <Building className="w-4 h-4 text-accent-500" /> : <Home className="w-4 h-4 text-accent-500" />}
+              {expanded && <span>ビュー</span>}
+            </div>
+            {expanded && (
+              <span className="text-xs text-text-secondary">
+                {current==='plan' ? '平面図' : current==='elev' ? '立面図' : '3Dビュー'}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* テンプレートセクション（順番：2番目） */}
+        <div className="space-y-3">
+          <button
+            className="w-full text-sm font-medium text-text-primary flex items-center justify-between bg-surface-elevated hover:bg-surface-hover rounded-lg px-3 py-2.5 border border-border-default transition-all duration-200 group"
+            onClick={() => setOpenTemplate(v => !v)}
+            aria-expanded={openTemplate}
+            title="形状テンプレートの開閉"
+          >
+            <div className="flex items-center gap-2">
+              <Square className="w-4 h-4 text-accent-500" />
+              {expanded && <span>テンプレート</span>}
+            </div>
+            {expanded && (openTemplate ? 
+              <ChevronDown className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" /> : 
+              <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" />
+            )}
+          </button>
+          
+          {openTemplate && expanded && (
+            <div className="grid grid-cols-2 gap-2 pl-2">
+              {(['rect','l','u','t'] as TemplateKind[]).map(t => (
+                <button 
+                  key={t} 
+                  className={`px-3 py-2 rounded-lg text-left font-medium transition-all duration-200 ${currentTemplate===t?'bg-accent-500 text-white':'bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default'}`} 
+                  onClick={() => onSelectTemplate?.(t)}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
+              {currentTemplate === 'poly' && (
+                <div className="col-span-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning font-medium">
+                  カスタム形状（テンプレート解除）
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         
         {/* 階層セクション */}
         <div className="space-y-3">
@@ -151,6 +215,10 @@ export const Sidebar: React.FC<{
                   </button>
                 </div>
               </div>
+
+              
+
+              
 
               {/* 階リスト */}
               <div className="space-y-2 max-h-64 overflow-auto scrollbar-thin scrollbar-thumb-border-default scrollbar-track-transparent">
@@ -228,175 +296,244 @@ export const Sidebar: React.FC<{
               </div>
             </div>
           )}
-        </div>
 
-        {/* ビューセクション */}
+        {/* 屋根（統合）セクション */}
         <div className="space-y-3">
           <button
             className="w-full text-sm font-medium text-text-primary flex items-center justify-between bg-surface-elevated hover:bg-surface-hover rounded-lg px-3 py-2.5 border border-border-default transition-all duration-200 group"
-            onClick={() => setOpenView(v => !v)}
-            aria-expanded={openView}
-            title="表示モードの開閉"
+            onClick={() => setOpenRoof(v => !v)}
+            aria-expanded={openRoof}
+            title="屋根設定の開閉"
           >
             <div className="flex items-center gap-2">
-              <Eye className="w-4 h-4 text-accent-500" />
-              {expanded && <span>ビュー</span>}
+              <Building className="w-4 h-4 text-accent-500" />
+              {expanded && <span>屋根</span>}
             </div>
-            {expanded && (openView ? 
+            {expanded && (openRoof ? 
               <ChevronDown className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" /> : 
               <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" />
             )}
           </button>
-          
-          {openView && expanded && (
-            <div className="space-y-2 pl-2">
-              <button 
-                className={`w-full px-3 py-2 rounded-lg text-left font-medium transition-all duration-200 ${current==='plan'?'bg-accent-500 text-white shadow-glow':'bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default'}`} 
-                onClick={() => onSelectView?.('plan')}
-              >
-                <div className="flex items-center gap-2">
-                  <Square className="w-4 h-4" />
-                  平面図
-                </div>
-              </button>
-              <button 
-                className={`w-full px-3 py-2 rounded-lg text-left font-medium transition-all duration-200 ${current==='elev'?'bg-accent-500 text-white shadow-glow':'bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default'}`} 
-                onClick={() => onSelectView?.('elev')}
-              >
-                <div className="flex items-center gap-2">
-                  <Building className="w-4 h-4" />
-                  立面図
-                </div>
-              </button>
-              <button 
-                className={`w-full px-3 py-2 rounded-lg text-left font-medium transition-all duration-200 ${current==='3d'?'bg-accent-500 text-white shadow-glow':'bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default'}`} 
-                onClick={() => onSelectView?.('3d')}
-              >
-                <div className="flex items-center gap-2">
-                  <Home className="w-4 h-4" />
-                  3Dビュー
-                </div>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* テンプレートセクション */}
-        <div className="space-y-3">
-          <button
-            className="w-full text-sm font-medium text-text-primary flex items-center justify-between bg-surface-elevated hover:bg-surface-hover rounded-lg px-3 py-2.5 border border-border-default transition-all duration-200 group"
-            onClick={() => setOpenTemplate(v => !v)}
-            aria-expanded={openTemplate}
-            title="形状テンプレートの開閉"
-          >
-            <div className="flex items-center gap-2">
-              <Square className="w-4 h-4 text-accent-500" />
-              {expanded && <span>テンプレート</span>}
-            </div>
-            {expanded && (openTemplate ? 
-              <ChevronDown className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" /> : 
-              <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" />
-            )}
-          </button>
-          
-          {openTemplate && expanded && (
-            <div className="grid grid-cols-2 gap-2 pl-2">
-              {(['rect','l','u','t'] as TemplateKind[]).map(t => (
-                <button 
-                  key={t} 
-                  className={`px-3 py-2 rounded-lg text-left font-medium transition-all duration-200 ${currentTemplate===t?'bg-accent-500 text-white':'bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default'}`} 
-                  onClick={() => onSelectTemplate?.(t)}
+          {openRoof && expanded && (
+            <div className="space-y-3 pl-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm text-text-secondary">屋根を有効化</label>
+                <button
+                  className={`w-12 h-7 rounded-full border transition-colors duration-200 flex items-center ${roof?.enabled ? 'bg-accent-500 border-accent-600' : 'bg-surface-hover border-border-default'}`}
+                  onClick={() => onUpdateRoof?.({ enabled: !roof?.enabled })}
+                  title="屋根の有効/無効"
                 >
-                  {t.toUpperCase()}
+                  <span className={`w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-200 ${roof?.enabled ? 'translate-x-5' : 'translate-x-1'}`}></span>
                 </button>
-              ))}
-              {currentTemplate === 'poly' && (
-                <div className="col-span-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning font-medium">
-                  カスタム形状（テンプレート解除）
+              </div>
+              {/* 形状選択 */}
+              <div className="space-y-2">
+                <label className="text-xs text-text-tertiary">屋根形状</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['flat','gable','hip','mono'] as const).map(t => (
+                    <button
+                      key={t}
+                      disabled={!roof?.enabled}
+                      onClick={() => onUpdateRoof?.({ type: t })}
+                      className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.type===t ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    >
+                      {t==='flat'?'フラット': t==='gable'?'切妻': t==='hip'?'寄棟':'片流れ'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 軒の出（屋根に統合） */}
+              <div className="space-y-2">
+                <label className="text-xs text-text-tertiary">軒の出</label>
+                <div className="grid grid-cols-2 gap-2 items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-secondary">有効</span>
+                    <button
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 ${eaves?.enabled ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
+                      onClick={() => onUpdateEaves?.({ enabled: !eaves?.enabled })}
+                      disabled={!roof?.enabled}
+                    >
+                      {eaves?.enabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={3000}
+                      value={eaves?.amountMm ?? 600}
+                      onChange={(e) => {
+                        const num = Number(e.target.value)
+                        const v = isNaN(num) ? 0 : Math.max(0, Math.min(3000, Math.round(num)))
+                        onUpdateEaves?.({ amountMm: v })
+                      }}
+                      disabled={!roof?.enabled}
+                      className={`w-full px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                    <span className="text-text-muted text-xs">mm</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 形状ごとのパラメータ */}
+              {roof?.type === 'flat' && (
+                <div className="grid grid-cols-2 gap-2 items-center">
+                  <label className="text-xs text-text-tertiary">立上り高さ(mm)</label>
+                  <input
+                    type="number"
+                    step={10}
+                    min={0}
+                    value={roof?.parapetHeightMm ?? 150}
+                    onChange={(e) => onUpdateRoof?.({ parapetHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
+                    disabled={!roof?.enabled}
+                    className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                  />
                 </div>
               )}
+
+              {/* 立面の上階の陰を除外（ターゲット階の設定） */}
+              <div className="flex items-center justify-between">
+                <label className="text-sm text-text-secondary">立面で上階の陰を除外</label>
+                <button
+                  className={`w-12 h-7 rounded-full border transition-colors duration-200 flex items-center ${roof?.excludeUpperShadows ? 'bg-accent-500 border-accent-600' : 'bg-surface-hover border-border-default'}`}
+                  onClick={() => onUpdateRoof?.({ excludeUpperShadows: !roof?.excludeUpperShadows })}
+                  title="立面図で上階の屋根が覆う部分を非表示にする"
+                  disabled={!roof?.enabled}
+                >
+                  <span className={`w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-200 ${roof?.excludeUpperShadows ? 'translate-x-5' : 'translate-x-1'}`}></span>
+                </button>
+              </div>
+
+              {roof?.type === 'gable' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">勾配（寸）</label>
+                    <input
+                      type="number"
+                      step={0.5}
+                      min={0}
+                      max={15}
+                      value={roof?.pitchSun ?? 4}
+                      onChange={(e) => onUpdateRoof?.({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value)||0)) })}
+                      disabled={!roof?.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">棟方向</label>
+                    <div className="flex items-center gap-2">
+                      {(['NS','EW'] as const).map(ax => (
+                        <button key={ax} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ ridgeAxis: ax })}
+                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.ridgeAxis===ax ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                          {ax}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-text-tertiary">妻面の辺指定はキャンバス操作で行う予定です（後続対応）。</p>
+                </div>
+              )}
+
+              {roof?.type === 'hip' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">勾配（寸）</label>
+                    <input
+                      type="number"
+                      step={0.5}
+                      min={0}
+                      max={15}
+                      value={roof?.pitchSun ?? 4}
+                      onChange={(e) => onUpdateRoof?.({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value)||0)) })}
+                      disabled={!roof?.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">最高点(mm)</label>
+                    <input
+                      type="number"
+                      step={10}
+                      min={0}
+                      value={roof?.apexHeightMm ?? 0}
+                      onChange={(e) => onUpdateRoof?.({ apexHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
+                      disabled={!roof?.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">棟方向</label>
+                    <div className="flex items-center gap-2">
+                      {(['NS','EW'] as const).map(ax => (
+                        <button key={ax} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ ridgeAxis: ax })}
+                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.ridgeAxis===ax ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                          {ax}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-text-tertiary">未指定時は長辺方向を自動選択します。</p>
+                </div>
+              )}
+
+              {roof?.type === 'mono' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">勾配（寸）</label>
+                    <input
+                      type="number"
+                      step={0.5}
+                      min={0}
+                      max={15}
+                      value={roof?.pitchSun ?? 3}
+                      onChange={(e) => onUpdateRoof?.({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value)||0)) })}
+                      disabled={!roof?.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">最高点(mm)</label>
+                    <input
+                      type="number"
+                      step={10}
+                      min={0}
+                      value={roof?.apexHeightMm ?? 0}
+                      onChange={(e) => onUpdateRoof?.({ apexHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
+                      disabled={!roof?.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <label className="text-xs text-text-tertiary">高い面</label>
+                    <div className="flex items-center gap-2">
+                      {(['N','S','E','W'] as const).map(high => {
+                        const opposite = (d: 'N'|'S'|'E'|'W'): 'N'|'S'|'E'|'W' => (d==='N'?'S':d==='S'?'N':d==='E'?'W':'E')
+                        const currentHigh = roof?.monoDownhill ? opposite(roof.monoDownhill as any) : undefined
+                        const active = currentHigh === high
+                        return (
+                          <button key={high} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ monoDownhill: opposite(high) })}
+                            className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${active ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                            {high}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 下屋の自動抽出は非採用（将来拡張） */}
+
+              <p className="text-xs text-text-tertiary">平面の屋根外形は軒ラインと同一です（点線）。立面は順次反映します。</p>
             </div>
           )}
+        </div>
         </div>
 
-        {/* スナップセクション */}
-        <div className="space-y-3">
-          <button
-            className="w-full text-sm font-medium text-text-primary flex items-center justify-between bg-surface-elevated hover:bg-surface-hover rounded-lg px-3 py-2.5 border border-border-default transition-all duration-200 group"
-            onClick={() => setOpenSnap(v => !v)}
-            aria-expanded={openSnap}
-            title="スナップ設定の開閉"
-          >
-            <div className="flex items-center gap-2">
-              <Grid className="w-4 h-4 text-accent-500" />
-              {expanded && <span>スナップ</span>}
-            </div>
-            {expanded && (openSnap ? 
-              <ChevronDown className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" /> : 
-              <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" />
-            )}
-          </button>
-          
-          {openSnap && expanded && (
-            <div className="space-y-3 text-sm pl-2">
-              <div className="flex items-center justify-between">
-                <label className="text-text-secondary font-medium">グリッド</label>
-                <button
-                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${snap?.enableGrid ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
-                  onClick={() => onUpdateSnap?.({ enableGrid: !snap?.enableGrid })}
-                >
-                  {snap?.enableGrid ? 'ON' : 'OFF'}
-                </button>
-              </div>
-              
-              <div className="space-y-1">
-                <label className="text-text-tertiary text-xs font-medium">間隔 (mm)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={2000}
-                  className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                  value={snap?.gridMm ?? 50}
-                  onChange={(e) => {
-                    const v = Math.max(1, Math.min(2000, Math.round(Number(e.target.value) || 0)))
-                    onUpdateSnap?.({ gridMm: v })
-                  }}
-                />
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <label className="text-text-secondary font-medium">直角スナップ</label>
-                <button
-                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${snap?.enableOrtho ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
-                  onClick={() => onUpdateSnap?.({ enableOrtho: !snap?.enableOrtho })}
-                >
-                  {snap?.enableOrtho ? 'ON' : 'OFF'}
-                </button>
-              </div>
-              
-              <div className="space-y-1">
-                <label className="text-text-tertiary text-xs font-medium">許容角度 (°)</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={45}
-                  step={0.5}
-                  className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                  value={snap?.orthoToleranceDeg ?? 7.5}
-                  onChange={(e) => {
-                    const num = Number(e.target.value)
-                    const v = isNaN(num) ? 0 : Math.max(0, Math.min(45, num))
-                    onUpdateSnap?.({ orthoToleranceDeg: v })
-                  }}
-                />
-              </div>
-              
-              <div className="text-2xs text-text-muted p-2 bg-surface-canvas rounded border border-border-subtle">
-                💡 ショートカット: G=グリッド切替, O=直角切替
-              </div>
-            </div>
-          )}
-        </div>
+        {/* 以降の旧ビュー/テンプレ/スナップのブロックは再配置のため削除 */}
+
+        
 
         {/* 寸法セクション */}
         <div className="space-y-3">
@@ -499,58 +636,86 @@ export const Sidebar: React.FC<{
           )}
         </div>
 
-        {/* 軒の出セクション */}
+        {/* スナップセクション（最後） */}
         <div className="space-y-3">
           <button
             className="w-full text-sm font-medium text-text-primary flex items-center justify-between bg-surface-elevated hover:bg-surface-hover rounded-lg px-3 py-2.5 border border-border-default transition-all duration-200 group"
-            onClick={() => setOpenEaves(v => !v)}
-            aria-expanded={openEaves}
-            title="軒の出設定の開閉"
+            onClick={() => setOpenSnap(v => !v)}
+            aria-expanded={openSnap}
+            title="スナップ設定の開閉"
           >
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-accent-500" />
-              {expanded && <span>軒の出</span>}
+              <Grid className="w-4 h-4 text-accent-500" />
+              {expanded && <span>スナップ</span>}
             </div>
-            {expanded && (openEaves ? 
+            {expanded && (openSnap ? 
               <ChevronDown className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" /> : 
               <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-text-secondary transition-colors" />
             )}
           </button>
           
-          {openEaves && expanded && (
+          {openSnap && expanded && (
             <div className="space-y-3 text-sm pl-2">
               <div className="flex items-center justify-between">
-                <label className="text-text-secondary font-medium">有効</label>
+                <label className="text-text-secondary font-medium">グリッド</label>
                 <button
-                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${eaves?.enabled ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
-                  onClick={() => onUpdateEaves?.({ enabled: !eaves?.enabled })}
+                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${snap?.enableGrid ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
+                  onClick={() => onUpdateSnap?.({ enableGrid: !snap?.enableGrid })}
                 >
-                  {eaves?.enabled ? 'ON' : 'OFF'}
+                  {snap?.enableGrid ? 'ON' : 'OFF'}
                 </button>
               </div>
               
               <div className="space-y-1">
-                <label className="text-text-tertiary text-xs font-medium">出幅 (mm)</label>
+                <label className="text-text-tertiary text-xs font-medium">間隔 (mm)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={2000}
+                  className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
+                  value={snap?.gridMm ?? 50}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.min(2000, Math.round(Number(e.target.value) || 0)))
+                    onUpdateSnap?.({ gridMm: v })
+                  }}
+                />
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <label className="text-text-secondary font-medium">直角スナップ</label>
+                <button
+                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${snap?.enableOrtho ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
+                  onClick={() => onUpdateSnap?.({ enableOrtho: !snap?.enableOrtho })}
+                >
+                  {snap?.enableOrtho ? 'ON' : 'OFF'}
+                </button>
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-text-tertiary text-xs font-medium">許容角度 (°)</label>
                 <input
                   type="number"
                   min={0}
-                  max={3000}
+                  max={45}
+                  step={0.5}
                   className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                  value={eaves?.amountMm ?? 600}
+                  value={snap?.orthoToleranceDeg ?? 7.5}
                   onChange={(e) => {
                     const num = Number(e.target.value)
-                    const v = isNaN(num) ? 0 : Math.max(0, Math.min(3000, Math.round(num)))
-                    onUpdateEaves?.({ amountMm: v })
+                    const v = isNaN(num) ? 0 : Math.max(0, Math.min(45, num))
+                    onUpdateSnap?.({ orthoToleranceDeg: v })
                   }}
                 />
               </div>
               
               <div className="text-2xs text-text-muted p-2 bg-surface-canvas rounded border border-border-subtle">
-                💡 辺クリックで個別編集（mm単位）
+                💡 ショートカット: G=グリッド切替, O=直角切替
               </div>
             </div>
           )}
         </div>
+
+        {/* 旧：軒の出セクション（再配置のため削除） */}
 
       </div>
     </aside>

@@ -64,6 +64,8 @@ export type FloorState = {
   color?: FloorColor
   shape: FloorShape
   eaves?: FloorEaves
+  // 日本語コメント: 屋根（フェーズ3）。各階に複数保持可能。
+  roofUnits?: import('./roofing').RoofUnit[]
 }
 
 // 日本語コメント: 連番ラベル nF を返す
@@ -86,6 +88,7 @@ export function createFloor(init: Partial<FloorState> & { index?: number; below?
     color: init.color ?? undefined,
     shape,
     eaves: init.eaves ?? { enabled: false, amountMm: 600, perEdge: {} },
+    roofUnits: (init as any).roofUnits ?? [],
   }
 }
 
