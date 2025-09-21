@@ -676,6 +676,27 @@ function pointInPolygon2D(p: Vec2, poly: Vec2[]): boolean {
   return inside
 }
 
+// 日本語コメント: 実線（壁）と完全一致/ほぼ一致する点線（屋根）を取り除く（重なり時は実線優先のため）
+export function dedupeDashedAgainstSolid(solid: Segment3D[], dashed: Segment3D[], epsMm = 0.5): Segment3D[] {
+  if (!dashed.length) return dashed
+  const q = (v: number) => Math.round(v / epsMm)
+  const keyOf = (s: Segment3D) => {
+    const a = [q(s.a.x), q(s.a.y), q(s.a.z)]
+    const b = [q(s.b.x), q(s.b.y), q(s.b.z)]
+    const ka = a.join(',')
+    const kb = b.join(',')
+    return ka <= kb ? `${ka}|${kb}` : `${kb}|${ka}`
+  }
+  const solidKeys = new Set<string>()
+  for (const s of solid) solidKeys.add(keyOf(s))
+  const out: Segment3D[] = []
+  for (const d of dashed) {
+    const k = keyOf(d)
+    if (!solidKeys.has(k)) out.push(d)
+  }
+  return out
+}
+
 // 日本語コメント: 上階の壁ボリューム（XY=壁外周, Z=階のベース→壁上端）に“入っている”屋根線分を取り除く。
 // 近似手法: 線分を一定ステップで分割し、各小区間の中点が上階ボリューム内ならその区間を捨てる。
 export function cullSegmentsByUpperWalls(allFloors: FloorState[], current: FloorState, segs: Segment3D[]): Segment3D[] {

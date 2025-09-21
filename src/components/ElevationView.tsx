@@ -42,32 +42,7 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
           <svg className="w-full h-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
             {/* 地面ライン */}
             <line x1={minX} y1={groundY} x2={minX + width} y2={groundY} stroke={COLORS.helper} strokeWidth={2} strokeDasharray="24 12" vectorEffect="non-scaling-stroke" />
-            {/* 立面輪郭（塗りなしの線画）とスパンのキャッシュ */}
-            {rects.map((r, idx) => {
-              const stroke = r.color ?? COLORS.wall
-              const startAligned = r.start + axisOffset
-              const endAligned = r.end + axisOffset
-              const flip = direction === 'north' || direction === 'west'
-              const x1 = flip ? (sharedAxisMin + sharedAxisMax - endAligned) : startAligned
-              const x2 = flip ? (sharedAxisMin + sharedAxisMax - startAligned) : endAligned
-              const x = Math.min(x1, x2)
-              const spanWidth = Math.max(1, Math.abs(x2 - x1))
-              return (
-                <rect
-                  key={`${r.floorId}-${idx}`}
-                  x={x}
-                  y={-r.top}
-                  width={spanWidth}
-                  height={Math.max(1, r.top - r.base)}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              )
-            })}
+            {/* NOTE: 壁（実線）は最後に重ね描きして、屋根（点線）より優先表示する */}
 
             {/* 折れ（稜線）を示す実線（各階の外形頂点のうち“内側”に相当する軸位置で縦線） */}
             {floors.map((f, idx) => {
@@ -514,6 +489,33 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
               })
               return <g key={`roof-shape-${floor.id}-${direction}`}>{lines}</g>
             })}
+            {/* 壁アウトライン（優先表示のため最後に重ね） */}
+            {rects.map((r, idx) => {
+              const stroke = r.color ?? COLORS.wall
+              const startAligned = r.start + axisOffset
+              const endAligned = r.end + axisOffset
+              const flip = direction === 'north' || direction === 'west'
+              const x1 = flip ? (sharedAxisMin + sharedAxisMax - endAligned) : startAligned
+              const x2 = flip ? (sharedAxisMin + sharedAxisMax - startAligned) : endAligned
+              const x = Math.min(x1, x2)
+              const spanWidth = Math.max(1, Math.abs(x2 - x1))
+              return (
+                <rect
+                  key={`overlay-${r.floorId}-${idx}`}
+                  x={x}
+                  y={-r.top}
+                  width={spanWidth}
+                  height={Math.max(1, r.top - r.base)}
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )
+            })}
+
             {/* 最高高さライン（方向別の最大高さ） */}
             {(() => {
               const yTop = -actualBounds.topMax
