@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { 
   ChevronDown, 
   ChevronRight, 
@@ -21,39 +21,55 @@ import {
   Zap,
   Building
 } from 'lucide-react'
-import type { SnapOptions } from '@/core/snap'
-
-export type ViewMode = 'plan' | 'elev' | '3d'
 import type { TemplateKind } from '@/core/model'
+import { useEditorState } from '@/core/state/editor-context'
 
-export const Sidebar: React.FC<{
-  expanded: boolean
-  onToggle: () => void
-  onSelectView?: (v: ViewMode) => void
-  current?: ViewMode
-  onSelectTemplate?: (t: TemplateKind) => void
-  currentTemplate?: TemplateKind
-  // 階層管理UI
-  floors?: Array<{ id: string; name: string; elevationMm: number; heightMm: number; visible: boolean; locked: boolean; color?: { walls?: string; eaves?: string } }>
-  activeFloorId?: string
-  onSelectFloor?: (id: string) => void
-  onAddFloor?: () => void
-  onDuplicateFloor?: () => void
-  onRemoveFloor?: () => void
-  onPatchFloor?: (id: string, patch: Partial<{ name: string; elevationMm: number; heightMm: number; visible: boolean; locked: boolean }>) => void
-  onRenameFloor?: (id: string) => void
-  snap?: Pick<SnapOptions, 'enableGrid' | 'gridMm' | 'enableOrtho' | 'orthoToleranceDeg'>
-  onUpdateSnap?: (patch: Partial<Pick<SnapOptions, 'enableGrid' | 'gridMm' | 'enableOrtho' | 'orthoToleranceDeg'>>) => void
-  dimensions?: { show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }
-  onUpdateDimensions?: (patch: Partial<{ show: boolean; outsideMode: 'auto'|'left'|'right'; offset: number; offsetUnit: 'px'|'mm'; decimals: number; avoidCollision: boolean }>) => void
-  eaves?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }
-  onUpdateEaves?: (patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void
-  // 屋根（統合セクション）
-  roof?: { enabled: boolean; type: 'flat'|'gable'|'hip'|'mono'; parapetHeightMm?: number; pitchSun?: number; ridgeAxis?: 'NS'|'EW'; monoDownhill?: 'N'|'S'|'E'|'W'; apexHeightMm?: number; excludeUpperShadows?: boolean }
-  onUpdateRoof?: (patch: Partial<{ enabled: boolean; type: 'flat'|'gable'|'hip'|'mono'; parapetHeightMm: number; pitchSun: number; ridgeAxis: 'NS'|'EW'; monoDownhill: 'N'|'S'|'E'|'W'; apexHeightMm: number; excludeUpperShadows: boolean }>) => void
-}> = ({ expanded, onToggle, onSelectView, current = 'plan', onSelectTemplate, currentTemplate = 'rect',
-  floors = [], activeFloorId, onSelectFloor, onAddFloor, onDuplicateFloor, onRemoveFloor, onPatchFloor, onRenameFloor,
-  snap, onUpdateSnap, dimensions, onUpdateDimensions, eaves, onUpdateEaves, roof, onUpdateRoof }) => {
+export const Sidebar: React.FC<{ expanded: boolean; onToggle: () => void }> = ({ expanded, onToggle }) => {
+  const {
+    view,
+    setView,
+    template,
+    floors,
+    activeFloorId,
+    setActiveFloorId,
+    snap,
+    setSnap,
+    dimensions,
+    setDimensions,
+    actions,
+  } = useEditorState()
+
+  const {
+    addFloorAboveActive,
+    duplicateActiveFloor,
+    removeActiveFloor,
+    patchFloor,
+    renameFloor,
+    updateEaves,
+    updateRoof,
+    applyTemplateToActive,
+  } = actions
+
+  const current = view
+  const currentTemplate = template
+  const activeFloor = useMemo(() => floors.find(f => f.id === activeFloorId), [floors, activeFloorId])
+  const roof = useMemo(() => {
+    const ru = activeFloor?.roofUnits?.find(u => u.footprint?.kind === 'outer')
+    if (!ru) {
+      return { enabled: false, type: 'flat' as const, parapetHeightMm: 150, ridgeAxis: 'NS' as const, monoDownhill: 'E' as const, pitchSun: 3, apexHeightMm: 0, excludeUpperShadows: true }
+    }
+    return {
+      enabled: true,
+      type: ru.type,
+      parapetHeightMm: ru.parapetHeightMm,
+      pitchSun: ru.pitchSun,
+      ridgeAxis: ru.ridgeAxis as 'NS' | 'EW' | undefined,
+      monoDownhill: ru.monoDownhill as 'N' | 'S' | 'E' | 'W' | undefined,
+      apexHeightMm: ru.apexHeightMm,
+      excludeUpperShadows: ru.excludeUpperShadows ?? true,
+    }
+  }, [activeFloor])
+  const eavesState = useMemo(() => activeFloor?.eaves ?? { enabled: false, amountMm: 600, perEdge: {} as Record<number, number> }, [activeFloor])
   
   // 日本語コメント: モダンな左サイドバー。建築プロ向けのセクション管理
   // ビューは簡易トグル化したため openView は廃止
@@ -91,7 +107,7 @@ export const Sidebar: React.FC<{
             className={`w-full text-sm font-medium text-text-primary flex items-center justify-between rounded-lg px-3 py-2.5 border transition-all duration-200 ${expanded ? 'bg-surface-elevated hover:bg-surface-hover border-border-default' : 'bg-surface-elevated border-border-default'}`}
             onClick={() => {
               const next = current === 'plan' ? 'elev' : current === 'elev' ? '3d' : 'plan'
-              onSelectView?.(next)
+              setView(next)
             }}
             title="クリックで 平面→立面→3D→… と切替"
           >
@@ -131,7 +147,7 @@ export const Sidebar: React.FC<{
                 <button 
                   key={t} 
                   className={`px-3 py-2 rounded-lg text-left font-medium transition-all duration-200 ${currentTemplate===t?'bg-accent-500 text-white':'bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default'}`} 
-                  onClick={() => onSelectTemplate?.(t)}
+                  onClick={() => applyTemplateToActive(t)}
                 >
                   {t.toUpperCase()}
                 </button>
@@ -170,7 +186,7 @@ export const Sidebar: React.FC<{
                 <div className="flex items-center gap-1">
                   <button 
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-accent-500 hover:bg-accent-600 text-white transition-colors duration-200" 
-                    onClick={onAddFloor}
+                    onClick={addFloorAboveActive}
                     title="新しい階を追加"
                   >
                     <Plus className="w-3 h-3" />
@@ -178,7 +194,7 @@ export const Sidebar: React.FC<{
                   </button>
                   <button 
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary transition-colors duration-200" 
-                    onClick={onDuplicateFloor}
+                    onClick={duplicateActiveFloor}
                     title="現在の階を複製"
                   >
                     <Copy className="w-3 h-3" />
@@ -186,7 +202,7 @@ export const Sidebar: React.FC<{
                   </button>
                   <button 
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-surface-elevated hover:bg-error/20 border border-border-default text-text-secondary hover:text-error transition-colors duration-200" 
-                    onClick={onRemoveFloor}
+                    onClick={removeActiveFloor}
                     title="現在の階を削除"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -198,7 +214,7 @@ export const Sidebar: React.FC<{
                     title="上の階へ"
                     onClick={() => {
                       const i = floors.findIndex(f => f.id === activeFloorId)
-                      if (i > 0) onSelectFloor?.(floors[i-1].id)
+                      if (i > 0) setActiveFloorId(floors[i-1].id)
                     }}
                   >
                     <ArrowUp className="w-3 h-3" />
@@ -208,7 +224,7 @@ export const Sidebar: React.FC<{
                     title="下の階へ"
                     onClick={() => {
                       const i = floors.findIndex(f => f.id === activeFloorId)
-                      if (i >= 0 && i < floors.length - 1) onSelectFloor?.(floors[i+1].id)
+                      if (i >= 0 && i < floors.length - 1) setActiveFloorId(floors[i+1].id)
                     }}
                   >
                     <ArrowDown className="w-3 h-3" />
@@ -227,21 +243,21 @@ export const Sidebar: React.FC<{
                     <div className="flex items-center gap-2 text-sm">
                       <button 
                         className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors duration-200 ${f.visible?'bg-success text-white':'bg-surface-hover text-text-tertiary hover:bg-success/20 hover:text-success'}`} 
-                        onClick={() => onPatchFloor?.(f.id, { visible: !f.visible })} 
+                        onClick={() => patchFloor(f.id, { visible: !f.visible })} 
                         title="表示/非表示切替"
                       >
                         {f.visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                       </button>
                       <button 
                         className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors duration-200 ${f.locked?'bg-error text-white':'bg-surface-hover text-text-tertiary hover:bg-warning/20 hover:text-warning'}`} 
-                        onClick={() => onPatchFloor?.(f.id, { locked: !f.locked })} 
+                        onClick={() => patchFloor(f.id, { locked: !f.locked })} 
                         title={f.locked?'ロック解除':'ロック'}
                       >
                         {f.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                       </button>
                       <button 
                         className={`flex-1 text-left px-3 py-1.5 rounded-md font-medium transition-all duration-200 ${activeFloorId===f.id?'bg-accent-500 text-white':'bg-surface-hover text-text-primary hover:bg-surface-elevated'}`} 
-                        onClick={() => onSelectFloor?.(f.id)} 
+                        onClick={() => setActiveFloorId(f.id)} 
                         title="この階をアクティブにする"
                       >
                         <div className="flex items-center gap-2">
@@ -251,7 +267,7 @@ export const Sidebar: React.FC<{
                       </button>
                       <button 
                         className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-hover hover:bg-surface-elevated text-text-tertiary hover:text-text-primary transition-colors duration-200" 
-                        onClick={() => onRenameFloor?.(f.id)}
+                        onClick={() => renameFloor(f.id)}
                         title="階名を変更"
                       >
                         <Edit3 className="w-4 h-4" />
@@ -267,7 +283,7 @@ export const Sidebar: React.FC<{
                             type="number" 
                             step={50} 
                             value={f.elevationMm}
-                            onChange={(e)=> onPatchFloor?.(f.id, { elevationMm: Number(e.target.value) || 0 })} 
+                            onChange={(e)=> patchFloor(f.id, { elevationMm: Number(e.target.value) || 0 })} 
                           />
                           <span className="text-text-muted text-xs">mm</span>
                         </div>
@@ -281,7 +297,7 @@ export const Sidebar: React.FC<{
                             min={1} 
                             step={50} 
                             value={f.heightMm}
-                            onChange={(e)=> onPatchFloor?.(f.id, { heightMm: Math.max(1, Number(e.target.value)||0) })} 
+                            onChange={(e)=> patchFloor(f.id, { heightMm: Math.max(1, Number(e.target.value)||0) })} 
                           />
                           <span className="text-text-muted text-xs">mm</span>
                         </div>
@@ -319,11 +335,11 @@ export const Sidebar: React.FC<{
               <div className="flex items-center justify-between">
                 <label className="text-sm text-text-secondary">屋根を有効化</label>
                 <button
-                  className={`w-12 h-7 rounded-full border transition-colors duration-200 flex items-center ${roof?.enabled ? 'bg-accent-500 border-accent-600' : 'bg-surface-hover border-border-default'}`}
-                  onClick={() => onUpdateRoof?.({ enabled: !roof?.enabled })}
+                  className={`w-12 h-7 rounded-full border transition-colors duration-200 flex items-center ${roof.enabled ? 'bg-accent-500 border-accent-600' : 'bg-surface-hover border-border-default'}`}
+                  onClick={() => updateRoof({ enabled: !roof.enabled })}
                   title="屋根の有効/無効"
                 >
-                  <span className={`w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-200 ${roof?.enabled ? 'translate-x-5' : 'translate-x-1'}`}></span>
+                  <span className={`w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-200 ${roof.enabled ? 'translate-x-5' : 'translate-x-1'}`}></span>
                 </button>
               </div>
               {/* 形状選択 */}
@@ -333,9 +349,9 @@ export const Sidebar: React.FC<{
                   {(['flat','gable','hip','mono'] as const).map(t => (
                     <button
                       key={t}
-                      disabled={!roof?.enabled}
-                      onClick={() => onUpdateRoof?.({ type: t })}
-                      className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.type===t ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      disabled={!roof.enabled}
+                      onClick={() => updateRoof({ type: t })}
+                      className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof.type===t ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       {t==='flat'?'フラット': t==='gable'?'切妻': t==='hip'?'寄棟':'片流れ'}
                     </button>
@@ -350,11 +366,11 @@ export const Sidebar: React.FC<{
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-text-secondary">有効</span>
                     <button
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 ${eaves?.enabled ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
-                      onClick={() => onUpdateEaves?.({ enabled: !eaves?.enabled })}
-                      disabled={!roof?.enabled}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 ${eavesState.enabled ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
+                      onClick={() => updateEaves(activeFloorId, { enabled: !eavesState.enabled })}
+                      disabled={!roof.enabled}
                     >
-                      {eaves?.enabled ? 'ON' : 'OFF'}
+                      {eavesState.enabled ? 'ON' : 'OFF'}
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
@@ -362,14 +378,14 @@ export const Sidebar: React.FC<{
                       type="number"
                       min={0}
                       max={3000}
-                      value={eaves?.amountMm ?? 600}
+                      value={eavesState.amountMm}
                       onChange={(e) => {
                         const num = Number(e.target.value)
                         const v = isNaN(num) ? 0 : Math.max(0, Math.min(3000, Math.round(num)))
-                        onUpdateEaves?.({ amountMm: v })
+                        updateEaves(activeFloorId, { amountMm: v })
                       }}
-                      disabled={!roof?.enabled}
-                      className={`w-full px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                      disabled={!roof.enabled}
+                      className={`w-full px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
                     />
                     <span className="text-text-muted text-xs">mm</span>
                   </div>
@@ -377,17 +393,17 @@ export const Sidebar: React.FC<{
               </div>
 
               {/* 形状ごとのパラメータ */}
-              {roof?.type === 'flat' && (
+              {roof.type === 'flat' && (
                 <div className="grid grid-cols-2 gap-2 items-center">
                   <label className="text-xs text-text-tertiary">立上り高さ(mm)</label>
                   <input
                     type="number"
                     step={10}
                     min={0}
-                    value={roof?.parapetHeightMm ?? 150}
-                    onChange={(e) => onUpdateRoof?.({ parapetHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
-                    disabled={!roof?.enabled}
-                    className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                    value={roof.parapetHeightMm ?? 150}
+                    onChange={(e) => updateRoof({ parapetHeightMm: Math.max(0, Math.round(Number(e.target.value) || 0)) })}
+                    disabled={!roof.enabled}
+                    className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200 ${roof.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
                   />
                 </div>
               )}
@@ -396,16 +412,16 @@ export const Sidebar: React.FC<{
               <div className="flex items-center justify-between">
                 <label className="text-sm text-text-secondary">立面で上階の陰を除外</label>
                 <button
-                  className={`w-12 h-7 rounded-full border transition-colors duration-200 flex items-center ${roof?.excludeUpperShadows ? 'bg-accent-500 border-accent-600' : 'bg-surface-hover border-border-default'}`}
-                  onClick={() => onUpdateRoof?.({ excludeUpperShadows: !roof?.excludeUpperShadows })}
+                  className={`w-12 h-7 rounded-full border transition-colors duration-200 flex items-center ${roof.excludeUpperShadows ? 'bg-accent-500 border-accent-600' : 'bg-surface-hover border-border-default'}`}
+                  onClick={() => updateRoof({ excludeUpperShadows: !roof.excludeUpperShadows })}
                   title="立面図で上階の屋根が覆う部分を非表示にする"
-                  disabled={!roof?.enabled}
+                  disabled={!roof.enabled}
                 >
-                  <span className={`w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-200 ${roof?.excludeUpperShadows ? 'translate-x-5' : 'translate-x-1'}`}></span>
+                  <span className={`w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-200 ${roof.excludeUpperShadows ? 'translate-x-5' : 'translate-x-1'}`}></span>
                 </button>
               </div>
 
-              {roof?.type === 'gable' && (
+              {roof.type === 'gable' && (
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2 items-center">
                     <label className="text-xs text-text-tertiary">勾配（寸）</label>
@@ -414,18 +430,18 @@ export const Sidebar: React.FC<{
                       step={0.5}
                       min={0}
                       max={15}
-                      value={roof?.pitchSun ?? 4}
-                      onChange={(e) => onUpdateRoof?.({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value)||0)) })}
-                      disabled={!roof?.enabled}
-                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                      value={roof.pitchSun ?? 4}
+                      onChange={(e) => updateRoof({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value) || 0)) })}
+                      disabled={!roof.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2 items-center">
                     <label className="text-xs text-text-tertiary">棟方向</label>
                     <div className="flex items-center gap-2">
                       {(['NS','EW'] as const).map(ax => (
-                        <button key={ax} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ ridgeAxis: ax })}
-                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.ridgeAxis===ax ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                        <button key={ax} disabled={!roof.enabled} onClick={() => updateRoof({ ridgeAxis: ax })}
+                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof.ridgeAxis===ax ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
                           {ax}
                         </button>
                       ))}
@@ -435,7 +451,7 @@ export const Sidebar: React.FC<{
                 </div>
               )}
 
-              {roof?.type === 'hip' && (
+              {roof.type === 'hip' && (
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2 items-center">
                     <label className="text-xs text-text-tertiary">勾配（寸）</label>
@@ -444,10 +460,10 @@ export const Sidebar: React.FC<{
                       step={0.5}
                       min={0}
                       max={15}
-                      value={roof?.pitchSun ?? 4}
-                      onChange={(e) => onUpdateRoof?.({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value)||0)) })}
-                      disabled={!roof?.enabled}
-                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                      value={roof.pitchSun ?? 4}
+                      onChange={(e) => updateRoof({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value) || 0)) })}
+                      disabled={!roof.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2 items-center">
@@ -456,18 +472,18 @@ export const Sidebar: React.FC<{
                       type="number"
                       step={10}
                       min={0}
-                      value={roof?.apexHeightMm ?? 0}
-                      onChange={(e) => onUpdateRoof?.({ apexHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
-                      disabled={!roof?.enabled}
-                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                      value={roof.apexHeightMm ?? 0}
+                      onChange={(e) => updateRoof({ apexHeightMm: Math.max(0, Math.round(Number(e.target.value) || 0)) })}
+                      disabled={!roof.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2 items-center">
                     <label className="text-xs text-text-tertiary">棟方向</label>
                     <div className="flex items-center gap-2">
                       {(['NS','EW'] as const).map(ax => (
-                        <button key={ax} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ ridgeAxis: ax })}
-                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof?.ridgeAxis===ax ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                        <button key={ax} disabled={!roof.enabled} onClick={() => updateRoof({ ridgeAxis: ax })}
+                          className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${roof.ridgeAxis===ax ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
                           {ax}
                         </button>
                       ))}
@@ -477,7 +493,7 @@ export const Sidebar: React.FC<{
                 </div>
               )}
 
-              {roof?.type === 'mono' && (
+              {roof.type === 'mono' && (
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2 items-center">
                     <label className="text-xs text-text-tertiary">勾配（寸）</label>
@@ -486,10 +502,10 @@ export const Sidebar: React.FC<{
                       step={0.5}
                       min={0}
                       max={15}
-                      value={roof?.pitchSun ?? 3}
-                      onChange={(e) => onUpdateRoof?.({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value)||0)) })}
-                      disabled={!roof?.enabled}
-                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                      value={roof.pitchSun ?? 3}
+                      onChange={(e) => updateRoof({ pitchSun: Math.max(0, Math.min(15, Number(e.target.value) || 0)) })}
+                      disabled={!roof.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2 items-center">
@@ -498,10 +514,10 @@ export const Sidebar: React.FC<{
                       type="number"
                       step={10}
                       min={0}
-                      value={roof?.apexHeightMm ?? 0}
-                      onChange={(e) => onUpdateRoof?.({ apexHeightMm: Math.max(0, Math.round(Number(e.target.value)||0)) })}
-                      disabled={!roof?.enabled}
-                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof?.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
+                      value={roof.apexHeightMm ?? 0}
+                      onChange={(e) => updateRoof({ apexHeightMm: Math.max(0, Math.round(Number(e.target.value) || 0)) })}
+                      disabled={!roof.enabled}
+                      className={`px-2 py-1.5 bg-primary-950 border rounded-md text-right text-primary-50 ${roof.enabled ? 'border-primary-700' : 'border-border-default opacity-60 cursor-not-allowed'}`}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2 items-center">
@@ -509,11 +525,11 @@ export const Sidebar: React.FC<{
                     <div className="flex items-center gap-2">
                       {(['N','S','E','W'] as const).map(high => {
                         const opposite = (d: 'N'|'S'|'E'|'W'): 'N'|'S'|'E'|'W' => (d==='N'?'S':d==='S'?'N':d==='E'?'W':'E')
-                        const currentHigh = roof?.monoDownhill ? opposite(roof.monoDownhill as any) : undefined
+                        const currentHigh = roof.monoDownhill ? opposite(roof.monoDownhill as any) : undefined
                         const active = currentHigh === high
                         return (
-                          <button key={high} disabled={!roof?.enabled} onClick={() => onUpdateRoof?.({ monoDownhill: opposite(high) })}
-                            className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${active ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof?.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                          <button key={high} disabled={!roof.enabled} onClick={() => updateRoof({ monoDownhill: opposite(high) })}
+                            className={`px-2 py-1.5 rounded-md text-xs border transition-colors ${active ? 'bg-accent-500 border-accent-600 text-white' : 'bg-surface-hover border-border-default text-text-primary'} ${!roof.enabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
                             {high}
                           </button>
                         )
@@ -558,10 +574,10 @@ export const Sidebar: React.FC<{
               <div className="flex items-center justify-between">
                 <label className="text-text-secondary font-medium">表示</label>
                 <button
-                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${dimensions?.show ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
-                  onClick={() => onUpdateDimensions?.({ show: !dimensions?.show })}
+                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${dimensions.show ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
+                  onClick={() => setDimensions(prev => ({ ...prev, show: !prev.show }))}
                 >
-                  {dimensions?.show ? 'ON' : 'OFF'}
+                  {dimensions.show ? 'ON' : 'OFF'}
                 </button>
               </div>
               
@@ -569,8 +585,8 @@ export const Sidebar: React.FC<{
                 <label className="text-text-tertiary text-xs font-medium">外側配置</label>
                 <select
                   className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                  value={dimensions?.outsideMode ?? 'auto'}
-                  onChange={(e) => onUpdateDimensions?.({ outsideMode: (e.target.value as any) })}
+                  value={dimensions.outsideMode}
+                  onChange={(e) => setDimensions(prev => ({ ...prev, outsideMode: e.target.value as typeof prev.outsideMode }))}
                 >
                   <option value="auto">自動</option>
                   <option value="left">左法線</option>
@@ -586,11 +602,11 @@ export const Sidebar: React.FC<{
                     min={0}
                     max={200}
                     className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                    value={dimensions?.offset ?? 16}
+                    value={dimensions.offset}
                     onChange={(e) => {
                       const num = Number(e.target.value)
                       const v = isNaN(num) ? 0 : Math.max(0, Math.min(200, Math.round(num)))
-                      onUpdateDimensions?.({ offset: v })
+                      setDimensions(prev => ({ ...prev, offset: v }))
                     }}
                   />
                 </div>
@@ -598,8 +614,8 @@ export const Sidebar: React.FC<{
                   <label className="text-text-tertiary text-xs font-medium">単位</label>
                   <select
                     className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                    value={dimensions?.offsetUnit ?? 'px'}
-                    onChange={(e) => onUpdateDimensions?.({ offsetUnit: (e.target.value as any) })}
+                    value={dimensions.offsetUnit}
+                    onChange={(e) => setDimensions(prev => ({ ...prev, offsetUnit: e.target.value as typeof prev.offsetUnit }))}
                   >
                     <option value="px">px</option>
                     <option value="mm">mm</option>
@@ -614,11 +630,11 @@ export const Sidebar: React.FC<{
                   min={0}
                   max={2}
                   className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                  value={dimensions?.decimals ?? 0}
+                  value={dimensions.decimals}
                   onChange={(e) => {
                     const num = Number(e.target.value)
                     const v = isNaN(num) ? 0 : Math.max(0, Math.min(2, Math.round(num)))
-                    onUpdateDimensions?.({ decimals: v })
+                    setDimensions(prev => ({ ...prev, decimals: v }))
                   }}
                 />
               </div>
@@ -626,10 +642,10 @@ export const Sidebar: React.FC<{
               <div className="flex items-center justify-between">
                 <label className="text-text-secondary font-medium">ラベル回避</label>
                 <button
-                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${dimensions?.avoidCollision ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
-                  onClick={() => onUpdateDimensions?.({ avoidCollision: !dimensions?.avoidCollision })}
+                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${dimensions.avoidCollision ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
+                  onClick={() => setDimensions(prev => ({ ...prev, avoidCollision: !prev.avoidCollision }))}
                 >
-                  {dimensions?.avoidCollision ? 'ON' : 'OFF'}
+                  {dimensions.avoidCollision ? 'ON' : 'OFF'}
                 </button>
               </div>
             </div>
@@ -659,10 +675,10 @@ export const Sidebar: React.FC<{
               <div className="flex items-center justify-between">
                 <label className="text-text-secondary font-medium">グリッド</label>
                 <button
-                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${snap?.enableGrid ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
-                  onClick={() => onUpdateSnap?.({ enableGrid: !snap?.enableGrid })}
+                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${snap.enableGrid ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
+                  onClick={() => setSnap(prev => ({ ...prev, enableGrid: !prev.enableGrid }))}
                 >
-                  {snap?.enableGrid ? 'ON' : 'OFF'}
+                  {snap.enableGrid ? 'ON' : 'OFF'}
                 </button>
               </div>
               
@@ -673,10 +689,10 @@ export const Sidebar: React.FC<{
                   min={1}
                   max={2000}
                   className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                  value={snap?.gridMm ?? 50}
+                  value={snap.gridMm}
                   onChange={(e) => {
                     const v = Math.max(1, Math.min(2000, Math.round(Number(e.target.value) || 0)))
-                    onUpdateSnap?.({ gridMm: v })
+                    setSnap(prev => ({ ...prev, gridMm: v }))
                   }}
                 />
               </div>
@@ -684,10 +700,10 @@ export const Sidebar: React.FC<{
               <div className="flex items-center justify-between">
                 <label className="text-text-secondary font-medium">直角スナップ</label>
                 <button
-                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${snap?.enableOrtho ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
-                  onClick={() => onUpdateSnap?.({ enableOrtho: !snap?.enableOrtho })}
+                  className={`px-3 py-1.5 rounded-md font-medium transition-colors duration-200 ${snap.enableOrtho ? 'bg-success text-white' : 'bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary'}`}
+                  onClick={() => setSnap(prev => ({ ...prev, enableOrtho: !prev.enableOrtho }))}
                 >
-                  {snap?.enableOrtho ? 'ON' : 'OFF'}
+                  {snap.enableOrtho ? 'ON' : 'OFF'}
                 </button>
               </div>
               
@@ -699,11 +715,11 @@ export const Sidebar: React.FC<{
                   max={45}
                   step={0.5}
                   className="w-full px-3 py-2 bg-primary-950 border border-primary-700 rounded-md text-right text-primary-50 focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20 transition-colors duration-200"
-                  value={snap?.orthoToleranceDeg ?? 7.5}
+                  value={snap.orthoToleranceDeg}
                   onChange={(e) => {
                     const num = Number(e.target.value)
                     const v = isNaN(num) ? 0 : Math.max(0, Math.min(45, num))
-                    onUpdateSnap?.({ orthoToleranceDeg: v })
+                    setSnap(prev => ({ ...prev, orthoToleranceDeg: v }))
                   }}
                 />
               </div>
