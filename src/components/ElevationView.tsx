@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import type { FloorState } from '@/core/floors'
-import { computeElevationBounds, computeElevationRects, computeParapetSpansForFloor, computeUpperShadowUnionSpans, subtractSpans, type ElevationBounds, type ElevationDirection } from '@/core/elevation'
+import { computeElevationBounds, computeElevationRects, computeParapetSpansForFloor, computeUpperShadowUnionSpans, subtractSpans, unionSpans, type ElevationBounds, type ElevationDirection } from '@/core/elevation'
 import { COLORS } from '@/ui/colors'
 import { outlineRect, outlineL, outlineU, outlineT, outlinePoly, type TemplateKind } from '@/core/model'
 
@@ -248,6 +248,9 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                   const ridgeAxis = ru.ridgeAxis || 'NS'
                   const isSlopeAlongX = ridgeAxis === 'NS' // NS棟→E-W方向に勾配（X軸）
                   const rSun = ratioFromSun(ru.pitchSun)
+                  // 日本語コメント: 高さは常に“勾配軸の半幅×勾配”で統一（方向に依存しない）
+                  const runSlope = (isSlopeAlongX ? widthX : widthY) / 2
+                  const deltaGlobal = runSlope * rSun
                   // 基底eavesスパン（未カット）
                   const sStartAxis = s.start - axisOffset
                   const sEndAxis = s.end - axisOffset
@@ -261,9 +264,8 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                   const baseW = Math.max(0, Math.abs(bx2 - bx1))
                   if ((axisIsX && isSlopeAlongX) || (!axisIsX && !isSlopeAlongX)) {
                     // 勾配方向に対して正面（三角形）：元のeavesスパン中央を頂点とする
-                    const delta = (baseW / 2) * rSun
                     const yEaves = -wallTop
-                    const yRidge = -(wallTop + delta)
+                    const yRidge = -(wallTop + deltaGlobal)
                     const xApex = (bx1 + bx2) / 2
                     const yAt = (x: number) => {
                       if (x <= xApex) {
@@ -286,21 +288,19 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                     lines.push(<line key={`mask-walltop-${floor.id}-${i}`} x1={sL} y1={-wallTop} x2={sR} y2={-wallTop} stroke={COLORS.surface.elevated} strokeWidth={3} vectorEffect="non-scaling-stroke" />)
                     yLeftEnd = yAt(xLeft); yRightEnd = yAt(xRight)
                   } else {
-                    // 棟方向に正面（フラットな棟ライン）— 四角形の上辺を壁端から壁端まで点線で描画
-                    const delta = (baseW / 2) * rSun
-                    const y = -(wallTop + delta)
-                    // 四角形の上辺は「軒の出を反映した端点」（eaves）で描く
-                    const xl = Math.min(xLeft, xRight)
-                    const xr = Math.max(xLeft, xRight)
-                    lines.push(<line key={`gable-flat-${floor.id}-${i}`} x1={xl} y1={y} x2={xr} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    // 四角形の縦辺（壁端→棟上辺）を点線で描画
-                    lines.push(<line key={`gable-flat-vl-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={xl} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    lines.push(<line key={`gable-flat-vr-${floor.id}-${i}`} x1={xr} y1={-wallTop} x2={xr} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    // 日本語コメント: 軒先端（eaves端）と壁頂点（壁端の上端）を“水平”に結ぶ（点線）
-                    const wallL = nearestWallEndpoint(xl)
-                    const wallR = nearestWallEndpoint(xr)
-                    lines.push(<line key={`gable-flat-hconnL-${floor.id}-${i}`} x1={wallL} y1={-wallTop} x2={xl} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    lines.push(<line key={`gable-flat-hconnR-${floor.id}-${i}`} x1={wallR} y1={-wallTop} x2={xr} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 棟方向に正面（フラットな棟ライン）— この面で有効な eaves スパン（可視スパン）に厳密一致させる
+                    const y = -(wallTop + deltaGlobal)
+                    const xl2 = Math.min(xLeft, xRight)
+                    const xr2 = Math.max(xLeft, xRight)
+                    lines.push(<line key={`gable-flat-${floor.id}-${i}`} x1={xl2} y1={y} x2={xr2} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 壁端→軒端の縦点線（可視スパン端に一致）
+                    lines.push(<line key={`gable-flat-vl-${floor.id}-${i}`} x1={xl2} y1={-wallTop} x2={xl2} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    lines.push(<line key={`gable-flat-vr-${floor.id}-${i}`} x1={xr2} y1={-wallTop} x2={xr2} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 日本語コメント: 軒先端と壁端上端の水平補助
+                    const wallL = nearestWallEndpoint(xl2)
+                    const wallR = nearestWallEndpoint(xr2)
+                    if (Math.abs(wallL - xl2) > 0.1) lines.push(<line key={`gable-flat-hconnL-${floor.id}-${i}`} x1={Math.min(wallL, xl2)} y1={-wallTop} x2={Math.max(wallL, xl2)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    if (Math.abs(wallR - xr2) > 0.1) lines.push(<line key={`gable-flat-hconnR-${floor.id}-${i}`} x1={Math.min(wallR, xr2)} y1={-wallTop} x2={Math.max(wallR, xr2)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                     yLeftEnd = y; yRightEnd = y
                     // 余計な斜めコネクタは出さない
                     suppressConnectors = true
@@ -356,56 +356,96 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                     const sStartAxis = s.start - axisOffset
                     const sEndAxis = s.end - axisOffset
                     const base = rawEaveSpans.find(b => sStartAxis >= b.start - 1e-6 && sEndAxis <= b.end + 1e-6) || { start: sStartAxis, end: sEndAxis }
-                    const bx1 = toScreen(base.start)
-                    const bx2 = toScreen(base.end)
                     const xl = Math.min(xLeft, xRight)
                     const xr = Math.max(xLeft, xRight)
-                    // 頂点の高さ差（勾配優先、0ならapex）
+                    // 高さ差Δ（勾配優先、0ならapex）
                     const runAlongSlope = slopeAxisIsX ? widthX : widthY
                     const delta = rSun > 0 ? (runAlongSlope * rSun) : apex
-                    const yApex = -(wallTop + delta)
-                    const yBase = -wallTop
-                    // 画面左が高いか（flipを考慮）
-                    // 日本語コメント: 画面の左右どちらが高いか（apex側）を方向に依存しない規則で決定
-                    // 1) 片流れの高い向き = downhill の反対
-                    const oppositeCard = (d: 'N'|'S'|'E'|'W'): 'N'|'S'|'E'|'W' => (d==='N'?'S':d==='S'?'N':d==='E'?'W':'E')
-                    const highDir = oppositeCard((ru.monoDownhill as any) || 'S')
-                    // 頂点はモデル軸の端（X:W/E, Y:S/N）。base.start は X/Y の小さい側。
-                    const apexAtStart = axisIsX ? (highDir === 'W') : (highDir === 'S')
-                    const xApex = apexAtStart ? bx1 : bx2
-                    // 画面上で頂点が左か右か（可視スパン外の場合も考慮）
-                    const sL = Math.min(xLeft, xRight)
-                    const sR = Math.max(xLeft, xRight)
-                    const apexOnLeft = xApex <= sL ? true : xApex >= sR ? false : (xApex <= (sL + sR) / 2)
-                    const xOpp = apexOnLeft ? sR : sL
-                    // 三角形の斜辺（片流れの正面）。安定性優先で全体を実線で描画
+                    const yHigh = -(wallTop + delta)
+                    const yLow = -wallTop
+                    // どちら側が低いか（スクリーン左/右）。flipを暗黙に含む direction 判定。
+                    const downhill = (ru.monoDownhill as any) as 'N'|'S'|'E'|'W' | undefined
+                    // 日本語コメント: 方向に依存しない見え方に統一するため、
+                    // 画面座標（左→右）上で「downhill が右向きか」を正規化して判定する。
+                    const downhillToRight = (() => {
+                      const axX = axisIsX
+                      const f = flip
+                      switch (downhill) {
+                        case 'E': return !f
+                        case 'W': return f
+                        case 'N': return axX ? null : !f
+                        case 'S': return axX ? null : f
+                        default: return null
+                      }
+                    })()
+                    const lowOnLeft = downhillToRight === true ? false : true
+                    // yAt: sL..sR 間で線形補間（低い側→高い側）
+                    const sL = xl, sR = xr
                     const yAt = (x: number) => {
-                      const t = (x - xApex) / Math.max(1e-6, (xOpp - xApex))
-                      return yApex + (yBase - yApex) * t
+                      const t = (x - sL) / Math.max(1e-6, (sR - sL))
+                      return lowOnLeft
+                        ? (yLow + (yHigh - yLow) * t)
+                        : (yHigh + (yLow - yHigh) * t)
                     }
-                    lines.push(<line key={`mono-rem-tri-slope-${floor.id}-${direction}-${i}`} x1={xApex} y1={yApex} x2={xOpp} y2={yBase} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
-                    // 底辺は「低い側の軒先端」から「高い側の壁端」まで（高い側の軒先へは延ばさない）
-                    const wallL = nearestWallEndpoint(xl)
-                    const wallR = nearestWallEndpoint(xr)
-                    const wallHigh = apexOnLeft ? wallL : wallR
-                    const lowEaves = apexOnLeft ? xr : xl
-                    const baseL = Math.min(wallHigh, lowEaves)
-                    const baseR = Math.max(wallHigh, lowEaves)
-                    lines.push(<line key={`mono-rem-tri-base-${floor.id}-${direction}-${i}`} x1={baseL} y1={yBase} x2={baseR} y2={yBase} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                    // 壁上端ラインを目立たせないよう薄くマスク（底辺と同区間）
-                    lines.push(<line key={`mono-rem-tri-mask-${floor.id}-${direction}-${i}`} x1={baseL} y1={yBase} x2={baseR} y2={yBase} stroke={COLORS.surface.elevated} strokeWidth={3} vectorEffect="non-scaling-stroke" />)
-                    // 軒先端と壁端上端の水平補助（張出しの視覚化）—高い側は描かない
-                    // 高い方の“壁”縦ラインは上まで実線で延長
-                    lines.push(<line key={`mono-rem-tri-wall-${floor.id}-${direction}-${i}`} x1={wallHigh} y1={yBase} x2={wallHigh} y2={yApex} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />)
-                    if (!apexOnLeft && Math.abs(wallL - xl) > 0.1) {
-                      // 左が低い側（apex右）のときのみ左側の水平補助を描く
-                      lines.push(<line key={`mono-rem-tri-hl-${floor.id}-${direction}-${i}`} x1={Math.min(wallL, xl)} y1={yBase} x2={Math.max(wallL, xl)} y2={yBase} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 屋根斜辺（点線）は壁内を避けて壁外のみ描画（壁は後段で実線上端を描く）
+                    const segMin = sL
+                    const segMax = sR
+                    // 屋根斜辺（eavesスパン）から壁ユニオンを減算して、壁外の点線のみ描画
+                    const wallSpans = rects
+                      .filter(r => r.floorId === floor.id)
+                      .map(r => {
+                        const xs = flip ? (sharedAxisMin + sharedAxisMax - (r.end + axisOffset)) : (r.start + axisOffset)
+                        const xe = flip ? (sharedAxisMin + sharedAxisMax - (r.start + axisOffset)) : (r.end + axisOffset)
+                        return { start: Math.min(xs, xe), end: Math.max(xs, xe) }
+                      })
+                    const wallUnion = unionSpans(wallSpans)
+                    const slopeSpan = [{ start: Math.min(sL, sR), end: Math.max(sL, sR) }]
+                    const dashSpans = subtractSpans(slopeSpan, wallUnion)
+                    for (const ds of dashSpans) {
+                      const a = Math.max(segMin, ds.start)
+                      const b = Math.min(segMax, ds.end)
+                      if (b - a > 1e-3) {
+                        lines.push(
+                          <line key={`mono-rem-tri-slope-span-${floor.id}-${direction}-${i}-${a.toFixed(1)}`}
+                                x1={a} y1={yAt(a)} x2={b} y2={yAt(b)}
+                                stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+                        )
+                      }
                     }
-                    if (apexOnLeft && Math.abs(wallR - xr) > 0.1) {
-                      // 右が低い側（apex左）のときのみ右側の水平補助を描く
-                      lines.push(<line key={`mono-rem-tri-hr-${floor.id}-${direction}-${i}`} x1={Math.min(wallR, xr)} y1={yBase} x2={Math.max(wallR, xr)} y2={yBase} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                    // 日本語コメント: 三角側面の軒先に“縦の落ち”が見えるよう、
+                    // 屋根斜線の左右端（軒先端）から壁の斜め上端へ向けた縦点線を追加する。
+                    // 壁上端は左→右で yLow→yHigh（lowOnLeft=true）/ 逆（false）。
+                    const xlEdge = Math.min(sL, sR)
+                    const xrEdge = Math.max(sL, sR)
+                    const wallL = nearestWallEndpoint(xlEdge)
+                    const wallR = nearestWallEndpoint(xrEdge)
+                    const wA = Math.min(wallL, wallR)
+                    const wB = Math.max(wallL, wallR)
+                    const yWallAt = (x: number) => {
+                      if (wB - wA < 1e-6) return yLow
+                      const t = (x - wA) / Math.max(1e-6, (wB - wA))
+                      return lowOnLeft
+                        ? (yLow + (yHigh - yLow) * t)
+                        : (yHigh + (yLow - yHigh) * t)
                     }
-                    yLeftEnd = yBase; yRightEnd = yBase
+                    // 左端（壁外に軒が出ている場合のみ縦点線を描く）
+                    if (Math.abs(wallL - xlEdge) > 0.1) {
+                      lines.push(
+                        <line key={`mono-tri-vertical-eave-left-${floor.id}-${direction}-${i}`}
+                          x1={xlEdge} y1={yAt(xlEdge)} x2={xlEdge} y2={yWallAt(xlEdge)}
+                          stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+                      )
+                    }
+                    // 右端
+                    if (Math.abs(wallR - xrEdge) > 0.1) {
+                      lines.push(
+                        <line key={`mono-tri-vertical-eave-right-${floor.id}-${direction}-${i}`}
+                          x1={xrEdge} y1={yAt(xrEdge)} x2={xrEdge} y2={yWallAt(xrEdge)}
+                          stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+                      )
+                    }
+                    // 底辺や補助線は描かない（壁上端実線と干渉させない）。
+                    yLeftEnd = yLow; yRightEnd = yLow
                     suppressConnectors = true
                   } else {
                     // サイド面（高い/低い）は既存仕様の矩形表現を維持（軒の出を含む）
@@ -440,13 +480,19 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                       if (Math.abs(wallL - xl) > 0.1) lines.push(<line key={`mono-side-high-hl-${floor.id}-${i}`} x1={Math.min(wallL, xl)} y1={-wallTop} x2={Math.max(wallL, xl)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                       if (Math.abs(wallR - xr) > 0.1) lines.push(<line key={`mono-side-high-hr-${floor.id}-${i}`} x1={Math.min(wallR, xr)} y1={-wallTop} x2={Math.max(wallR, xr)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                     } else {
-                      // 低い面：点線の四角形（eaves端で上辺、縦辺）
-                      lines.push(<line key={`mono-side-low-top-${floor.id}-${i}`} x1={xl} y1={yHigh} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      // 低い面：屋根ライン（点線）を“壁内外”で分割。壁外=点線、壁内は後段の壁オーバーレイで実線表示。
+                      // 垂直（eaves端）
                       lines.push(<line key={`mono-side-low-vl-${floor.id}-${i}`} x1={xl} y1={-wallTop} x2={xl} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                       lines.push(<line key={`mono-side-low-vr-${floor.id}-${i}`} x1={xr} y1={-wallTop} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
-                      // 低い面も左右とも壁端→軒先端を水平点線で結ぶ
+                      // 壁端点
                       const wallL = nearestWallEndpoint(xLeft)
                       const wallR = nearestWallEndpoint(xRight)
+                      const inL = Math.max(xl, Math.min(xr, Math.min(wallL, wallR)))
+                      const inR = Math.max(xl, Math.min(xr, Math.max(wallL, wallR)))
+                      // 屋根上端（点線）: 壁外の区間のみ
+                      if (inL - xl > 1e-3) lines.push(<line key={`mono-side-low-top-leftDash-${floor.id}-${i}`} x1={xl} y1={yHigh} x2={inL} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      if (xr - inR > 1e-3) lines.push(<line key={`mono-side-low-top-rightDash-${floor.id}-${i}`} x1={inR} y1={yHigh} x2={xr} y2={yHigh} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                      // 壁端→軒先端の水平点線
                       if (Math.abs(wallL - xl) > 0.1) lines.push(<line key={`mono-side-low-hl-${floor.id}-${i}`} x1={Math.min(wallL, xl)} y1={-wallTop} x2={Math.max(wallL, xl)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                       if (Math.abs(wallR - xr) > 0.1) lines.push(<line key={`mono-side-low-hr-${floor.id}-${i}`} x1={Math.min(wallR, xr)} y1={-wallTop} x2={Math.max(wallR, xr)} y2={-wallTop} stroke={stroke} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
                     }
@@ -477,19 +523,43 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
                 }
                 const nxL = nearestEndpoint(xLeft)
                 const nxR = nearestEndpoint(xRight)
+                // 日本語コメント: 片流れでズレが見える原因を解消するため、
+                // コネクタは「垂直→水平」の2線分で必ず壁上端に正対させる。
                 if (!suppressConnectors && !coveredByAbove(xLeft) && Math.abs(nxL - xLeft) > 0.1) {
-                  // 同一Yで水平に結ぶ。monoなどで端が高い場合は端のYを採用
                   const yConn = yLeftEnd
-                  lines.push(<line key={`conn-left-${floor.id}-${direction}-${i}`} x1={xLeft} y1={yConn} x2={nxL} y2={-wallTop} stroke={stroke} strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                  // 垂直（軒先端→壁上端の高さ）
+                  lines.push(
+                    <line key={`conn-left-v-${floor.id}-${direction}-${i}`}
+                      x1={xLeft} y1={yConn} x2={xLeft} y2={-wallTop}
+                      stroke={stroke} strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+                  )
+                  // 水平（壁上端で壁端点まで）
+                  lines.push(
+                    <line key={`conn-left-h-${floor.id}-${direction}-${i}`}
+                      x1={Math.min(xLeft, nxL)} y1={-wallTop} x2={Math.max(xLeft, nxL)} y2={-wallTop}
+                      stroke={stroke} strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+                  )
                 }
                 if (!suppressConnectors && !coveredByAbove(xRight) && Math.abs(nxR - xRight) > 0.1) {
                   const yConn = yRightEnd
-                  lines.push(<line key={`conn-right-${floor.id}-${direction}-${i}`} x1={xRight} y1={yConn} x2={nxR} y2={-wallTop} stroke={stroke} strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)
+                  // 垂直（軒先端→壁上端の高さ）
+                  lines.push(
+                    <line key={`conn-right-v-${floor.id}-${direction}-${i}`}
+                      x1={xRight} y1={yConn} x2={xRight} y2={-wallTop}
+                      stroke={stroke} strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+                  )
+                  // 水平（壁上端で壁端点まで）
+                  lines.push(
+                    <line key={`conn-right-h-${floor.id}-${direction}-${i}`}
+                      x1={Math.min(xRight, nxR)} y1={-wallTop} x2={Math.max(xRight, nxR)} y2={-wallTop}
+                      stroke={stroke} strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+                  )
                 }
               })
               return <g key={`roof-shape-${floor.id}-${direction}`}>{lines}</g>
             })}
-            {/* 壁アウトライン（優先表示のため最後に重ね） */}
+            {/* 壁アウトライン（優先表示のため最後に重ね）
+                - 切妻/片流れのフロアでは「天井の水平実線」を描かない（上端は屋根で表現） */}
             {rects.map((r, idx) => {
               const stroke = r.color ?? COLORS.wall
               const startAligned = r.start + axisOffset
@@ -497,22 +567,239 @@ const ElevationPanel: React.FC<{ direction: ElevationDirection; floors: FloorSta
               const flip = direction === 'north' || direction === 'west'
               const x1 = flip ? (sharedAxisMin + sharedAxisMax - endAligned) : startAligned
               const x2 = flip ? (sharedAxisMin + sharedAxisMax - startAligned) : endAligned
-              const x = Math.min(x1, x2)
-              const spanWidth = Math.max(1, Math.abs(x2 - x1))
+              const xl = Math.min(x1, x2)
+              const xr = Math.max(x1, x2)
+              // 対象フロアの屋根タイプを確認
+              const floor = floors.find(f => f.id === r.floorId)
+              const units: any[] = Array.isArray((floor as any)?.roofUnits) ? (floor as any).roofUnits : []
+              const outer = units.find(u => u && u.footprint?.kind === 'outer')
+              // 切妻: 三角面（妻側）のときは上辺（天井水平実線）を描かない。棟側では描く。
+              // → 判定は屋根描画と同じ条件（axisIsX と ridgeAxis の組み合わせ）を再利用して整合性を担保。
+              // 片流れ: 棟面（低い側=monoDownhill）では上辺水平実線を描く。高い側は描かない。
+              //         残り2面（流れ面＝勾配軸に直交）は、屋根ラインに平行な壁上端（水平）を描く。
+              let noTopLine = false
+              const axisIsXHere = direction === 'north' || direction === 'south'
+              let isMonoFlowFace = false
+              let isMonoTriFace = false
+              // 日本語コメント: 上辺描画の最終判定（mono専用の補強用フラグ）。
+              let shouldDrawTop = true
+              if (outer?.type === 'mono') {
+                const downhill = (outer as any).monoDownhill as ('N'|'S'|'E'|'W'|undefined)
+                const isDownhillFace = (
+                  (downhill === 'N' && direction === 'north') ||
+                  (downhill === 'S' && direction === 'south') ||
+                  (downhill === 'E' && direction === 'east')  ||
+                  (downhill === 'W' && direction === 'west')
+                )
+                const isUphillFace = (
+                  (downhill === 'N' && direction === 'south') ||
+                  (downhill === 'S' && direction === 'north') ||
+                  (downhill === 'E' && direction === 'west')  ||
+                  (downhill === 'W' && direction === 'east')
+                )
+                const slopeAxisIsX = downhill === 'E' || downhill === 'W'
+                const isFlowFace = (!isDownhillFace && !isUphillFace) && (axisIsXHere !== slopeAxisIsX)
+                const isTriFace = (!isDownhillFace && !isUphillFace) && (axisIsXHere === slopeAxisIsX)
+                // 棟面: 上辺=壁天端で水平線を描く。高面: 上辺なし。流れ面: 屋根ラインに平行（水平）の壁上端を描く。
+                noTopLine = !isDownhillFace && !isFlowFace
+                isMonoFlowFace = isFlowFace
+                isMonoTriFace = isTriFace
+                // 日本語コメント: 片流れの四角い面（棟面/流れ面）は必ず上辺を描く。
+                // まれに noTopLine 判定が崩れるケースでも確実に描画するための保険。
+                shouldDrawTop = isDownhillFace || isFlowFace
+                // 流れ面用の専用トップY（屋根ラインに平行=水平、棟高で統一）
+                var monoFlowTopY: number | null = null
+                // 棟面（低い側）用のトップY（屋根高）
+                var monoDownhillTopY: number | null = null
+                if (isFlowFace) {
+                  // 建物外形の幅から方向非依存の棟高Δを算出
+                  const k2 = (floor?.shape?.kind ?? 'rect') as TemplateKind
+                  const d2: any = (floor as any)?.shape?.data
+                  const pts2 = k2 === 'rect' ? outlineRect(d2)
+                    : k2 === 'l' ? outlineL(d2)
+                    : k2 === 'u' ? outlineU(d2)
+                    : k2 === 't' ? outlineT(d2)
+                    : outlinePoly(d2)
+                  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+                  for (const p of pts2) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+                  const widthX = Math.max(1, maxX - minX)
+                  const widthY = Math.max(1, maxY - minY)
+                  const rSun = (() => { const v = Number((outer as any).pitchSun ?? 0); return (Number.isFinite(v) && v > 0) ? v / 10 : 0 })()
+                  const apex = Math.max(0, Number((outer as any).apexHeightMm ?? 0))
+                  const runSlope = (slopeAxisIsX ? widthX : widthY)
+                  const deltaGlobal = rSun > 0 ? (runSlope * rSun) : apex
+                  monoFlowTopY = -(r.top + deltaGlobal)
+                }
+                if (isDownhillFace) {
+                  // 低い側（downhill 面）の四角形の上辺は「壁天端（=軒高）」で水平に描くべき。
+                  // これまで棟高で描いていたため不自然な段差が出ていた。
+                  const k2 = (floor?.shape?.kind ?? 'rect') as TemplateKind
+                  const d2: any = (floor as any)?.shape?.data
+                  const pts2 = k2 === 'rect' ? outlineRect(d2)
+                    : k2 === 'l' ? outlineL(d2)
+                    : k2 === 'u' ? outlineU(d2)
+                    : k2 === 't' ? outlineT(d2)
+                    : outlinePoly(d2)
+                  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+                  for (const p of pts2) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+                  const widthX = Math.max(1, maxX - minX)
+                  const widthY = Math.max(1, maxY - minY)
+                  const rSun = (() => { const v = Number((outer as any).pitchSun ?? 0); return (Number.isFinite(v) && v > 0) ? v / 10 : 0 })()
+                  const apex = Math.max(0, Number((outer as any).apexHeightMm ?? 0))
+                  const runSlope = (slopeAxisIsX ? widthX : widthY)
+                  // 低い側は「壁天端 = -r.top」。勾配Δは使用しない。
+                  // 参考: delta は高い側や流れ面の表現にのみ関与する。
+                  const _delta = rSun > 0 ? (runSlope * rSun) : apex // 説明用に保持（未使用）
+                  monoDownhillTopY = -r.top
+                }
+                // 描画: 下の共通ルーチンで monoFlowTopY を参照（非nullなら優先）
+              } else if (outer?.type === 'gable') {
+                const isSlopeAlongX = (outer.ridgeAxis ?? 'NS') === 'NS'
+                const isTriangleFace = (axisIsXHere && isSlopeAlongX) || (!axisIsXHere && !isSlopeAlongX)
+                noTopLine = isTriangleFace
+              }
               return (
-                <rect
-                  key={`overlay-${r.floorId}-${idx}`}
-                  x={x}
-                  y={-r.top}
-                  width={spanWidth}
-                  height={Math.max(1, r.top - r.base)}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  vectorEffect="non-scaling-stroke"
-                />
+                <g key={`overlay-${r.floorId}-${idx}`}>
+                  {/* 底辺（地面に接する側） */}
+                  <line x1={xl} y1={-r.base} x2={xr} y2={-r.base} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                  {/* 左右の立ち上がり */}
+                  <line x1={xl} y1={-r.base} x2={xl} y2={-r.top} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                  <line x1={xr} y1={-r.base} x2={xr} y2={-r.top} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                  {/* 上辺（天井水平線 or 流れ面の水平線） */}
+                  {(outer?.type === 'mono' ? shouldDrawTop : !noTopLine) && (
+                    <line
+                      x1={xl}
+                      y1={typeof monoFlowTopY === 'number' ? monoFlowTopY : (typeof monoDownhillTopY === 'number' ? monoDownhillTopY : -r.top)}
+                      x2={xr}
+                      y2={typeof monoFlowTopY === 'number' ? monoFlowTopY : (typeof monoDownhillTopY === 'number' ? monoDownhillTopY : -r.top)}
+                      stroke={stroke}
+                      strokeWidth={2}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+                  {/* 片流れの三角面（正面）: 壁上端も屋根斜辺に“並行”な実線で描く */}
+                  {outer?.type === 'mono' && isMonoTriFace && (() => {
+                    // eaves スパンのうち、この壁矩形と最大に重なるものを採用（start/endを保持する）
+                    const raw = computeParapetSpansForFloor(floor as any, direction)
+                    const toScreen = (v: number) => {
+                      const aligned = v + axisOffset
+                      return (direction === 'north' || direction === 'west') ? (sharedAxisMin + sharedAxisMax - aligned) : aligned
+                    }
+                    let bestRef: { start: number; end: number } | null = null
+                    let bestA = 0, bestB = 0
+                    let bestOv = -1
+                    for (const s of raw) {
+                      const a = toScreen(s.start)
+                      const b = toScreen(s.end)
+                      const lo = Math.min(a, b), hi = Math.max(a, b)
+                      const ov = Math.max(0, Math.min(xr, hi) - Math.max(xl, lo))
+                      if (ov > bestOv) { bestOv = ov; bestRef = s; bestA = a; bestB = b }
+                    }
+                    // start/end のスクリーン座標（未取得時は矩形幅でフォールバック）
+                    const bxStart = bestRef ? bestA : xl
+                    const bxEnd = bestRef ? bestB : xr
+                    // 棟高Δを方向非依存で算出
+                    const k2 = (floor?.shape?.kind ?? 'rect') as TemplateKind
+                    const d2: any = (floor as any)?.shape?.data
+                    const pts2 = k2 === 'rect' ? outlineRect(d2)
+                      : k2 === 'l' ? outlineL(d2)
+                      : k2 === 'u' ? outlineU(d2)
+                      : k2 === 't' ? outlineT(d2)
+                      : outlinePoly(d2)
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+                    for (const p of pts2) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+                    const widthX = Math.max(1, maxX - minX)
+                    const widthY = Math.max(1, maxY - minY)
+                    const slopeAxisIsX2 = ((outer as any).monoDownhill === 'E' || (outer as any).monoDownhill === 'W')
+                    const rSun = (() => { const v = Number((outer as any).pitchSun ?? 0); return (Number.isFinite(v) && v > 0) ? v / 10 : 0 })()
+                    const apex = Math.max(0, Number((outer as any).apexHeightMm ?? 0))
+                    const runSlope = (slopeAxisIsX2 ? widthX : widthY)
+                    const delta = rSun > 0 ? (runSlope * rSun) : apex
+                    if (delta <= 0) return null
+                    // 三角面の壁上端: 左右いずれが低いかを downhill と方向から決定し、直線で描く
+                    const downhill = ((outer as any).monoDownhill ?? 'S') as 'N'|'S'|'E'|'W'
+                    const yHigh = -(r.top + delta)
+                    const yLow = -r.top
+                    // 日本語コメント: 方向差を無くすため、画面座標での左右関係に統一
+                    const downhillToRight2 = (() => {
+                      const axX = axisIsXHere
+                      const f = flip
+                      switch (downhill) {
+                        case 'E': return !f
+                        case 'W': return f
+                        case 'N': return axX ? null : !f
+                        case 'S': return axX ? null : f
+                        default: return null
+                      }
+                    })()
+                    const lowOnLeft = downhillToRight2 === true ? false : true
+                    const yL = lowOnLeft ? yLow : yHigh
+                    const yR = lowOnLeft ? yHigh : yLow
+                    return (
+                      <g>
+                        {/* 壁上端（実線、屋根斜辺と並行） */}
+                        <line x1={xl} y1={yL} x2={xr} y2={yR} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                        {/* 左右の壁縦線を上端まで延長（高い側も含む） */}
+                        <line x1={xl} y1={-r.base} x2={xl} y2={yL} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                        <line x1={xr} y1={-r.base} x2={xr} y2={yR} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                      </g>
+                    )
+                  })()}
+                  {/* 切妻の妻側: 壁ライン優先のため、上端を三角形（実線）で表現 */}
+                  {outer?.type === 'gable' && noTopLine && (() => {
+                    // 屋根線（点線）の左右斜辺と「並行」になるよう、妻側の壁上端（三角）を構成
+                    // 1) この矩形に対応する eaves スパン（屋根ベース）を取得（スクリーン座標）
+                    const raw = computeParapetSpansForFloor(floor as any, direction)
+                    const toScreen = (v: number) => {
+                      const aligned = v + axisOffset
+                      return (direction === 'north' || direction === 'west') ? (sharedAxisMin + sharedAxisMax - aligned) : aligned
+                    }
+                    let best: { lo: number; hi: number } | null = null
+                    let bestOv = -1
+                    for (const s of raw) {
+                      const a = toScreen(s.start)
+                      const b = toScreen(s.end)
+                      const lo = Math.min(a, b), hi = Math.max(a, b)
+                      const ov = Math.max(0, Math.min(xr, hi) - Math.max(xl, lo))
+                      if (ov > bestOv) { bestOv = ov; best = { lo, hi } }
+                    }
+                    // eavesスパンが取得できない場合は、矩形幅（xl..xr）をフォールバック
+                    const bxL = best ? best.lo : xl
+                    const bxR = best ? best.hi : xr
+                    const xApexRoof = (bxL + bxR) / 2
+                    // 2) 屋根の棟高（方向非依存）
+                    const k2 = (floor?.shape?.kind ?? 'rect') as TemplateKind
+                    const d2: any = (floor as any)?.shape?.data
+                    const pts2 = k2 === 'rect' ? outlineRect(d2)
+                      : k2 === 'l' ? outlineL(d2)
+                      : k2 === 'u' ? outlineU(d2)
+                      : k2 === 't' ? outlineT(d2)
+                      : outlinePoly(d2)
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+                    for (const p of pts2) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+                    const widthX = Math.max(1, maxX - minX)
+                    const widthY = Math.max(1, maxY - minY)
+                    const isSlopeAlongX = (outer.ridgeAxis ?? 'NS') === 'NS'
+                    const rSun = (() => { const v = Number((outer as any).pitchSun ?? 0); return (Number.isFinite(v) && v > 0) ? v / 10 : 0 })()
+                    const runSlope = (isSlopeAlongX ? widthX : widthY) / 2
+                    const deltaGlobal = runSlope * rSun
+                    const yEaves = -r.top
+                    const yRidge = -(r.top + deltaGlobal)
+                    if (deltaGlobal <= 0) return null
+                    // 3) 屋根斜辺の傾きを取得（左右）
+                    const mL = (yRidge - yEaves) / Math.max(1e-6, (xApexRoof - bxL))
+                    const mR = (yRidge - yEaves) / Math.max(1e-6, (bxR - xApexRoof))
+                    // 4) これらと並行な壁上端の左右斜辺の交点（頂点）を解く
+                    const xApexWall = (mL * xl + mR * xr) / Math.max(1e-6, (mL + mR))
+                    const yApexWall = yEaves + mL * (xApexWall - xl)
+                    return (
+                      <g>
+                        <line x1={xl} y1={yEaves} x2={xApexWall} y2={yApexWall} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                        <line x1={xApexWall} y1={yApexWall} x2={xr} y2={yEaves} stroke={stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                      </g>
+                    )
+                  })()}
+                </g>
               )
             })}
 

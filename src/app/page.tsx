@@ -1,8 +1,8 @@
 "use client";
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import TopBar from '@/components/TopBar'
 import PreviewOverlay from '@/components/PreviewOverlay'
-import Sidebar, { ViewMode } from '@/components/Sidebar'
+import Sidebar from '@/components/Sidebar'
 import CanvasArea from '@/components/CanvasArea'
 import ElevationView from '@/components/ElevationView'
 import { createFloor, duplicateFloor, FloorState, randomId, nextFloorName, cloneShape, createDefaultShape } from '@/core/floors'
@@ -12,6 +12,9 @@ import Wireframe3D from '@/components/Wireframe3D'
 import { SNAP_DEFAULTS } from '@/core/snap'
 import { downloadJson, loadFromLocalStorage, parseSaveData, saveToLocalStorage, serializeSaveData, clearLocalStorage, persistFloorToState } from '@/io/persist'
 import type { RoofUnit } from '@/core/roofing'
+import { EditorStateProvider } from '@/core/state/editor-context'
+import type { ViewMode } from '@/core/state/editor-context'
+import EditorShell from '@/ui/layout/EditorShell'
 // 下屋の自動抽出は非採用（将来拡張）
 
 export default function Page() {
@@ -106,7 +109,7 @@ export default function Page() {
   }, [floors, activeFloorId])
 
   // 日本語コメント: フロア操作（追加/削除/複製/リネーム/高さ編集/表示/ロック）
-  const addFloorAboveActive = () => {
+  const addFloorAboveActive = useCallback(() => {
     setFloors(prev => {
       const idx = prev.findIndex(f => f.id === activeFloorId)
       const below = prev[idx] ?? null
@@ -120,8 +123,9 @@ export default function Page() {
       setActiveFloorId(next.id)
       return arr
     })
-  }
-  const duplicateActiveFloor = () => {
+  }, [activeFloorId])
+
+  const duplicateActiveFloor = useCallback(() => {
     setFloors(prev => {
       const i = prev.findIndex(f => f.id === activeFloorId)
       if (i < 0) return prev
@@ -136,8 +140,9 @@ export default function Page() {
       setActiveFloorId(dup.id)
       return arr
     })
-  }
-  const removeActiveFloor = () => {
+  }, [activeFloorId])
+
+  const removeActiveFloor = useCallback(() => {
     setFloors(prev => {
       if (prev.length <= 1) return prev
       const i = prev.findIndex(f => f.id === activeFloorId)
@@ -146,11 +151,13 @@ export default function Page() {
       setActiveFloorId(arr[Math.max(0, i - 1)].id)
       return arr
     })
-  }
-  const patchFloor = (id: string, patch: Partial<FloorState>) => {
+  }, [activeFloorId])
+
+  const patchFloor = useCallback((id: string, patch: Partial<FloorState>) => {
     setFloors(prev => prev.map(f => (f.id === id ? { ...f, ...patch } : f)))
-  }
-  const renameFloor = (id: string) => {
+  }, [])
+
+  const renameFloor = useCallback((id: string) => {
     const target = floors.find(f => f.id === id)
     const cur = prompt('フロア名', target?.name ?? '')
     if (cur != null) {
@@ -159,7 +166,75 @@ export default function Page() {
       const nextColor = pickFloorColorsByName(nextName, order >= 0 ? order : 0)
       patchFloor(id, { name: nextName, color: nextColor })
     }
-  }
+  }, [floors, patchFloor])
+
+  const updateEaves = useCallback((id: string, patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => {
+    setFloors(prev => prev.map(f => (f.id === id
+      ? {
+          ...f,
+          eaves: {
+            ...(f.eaves ?? { enabled: false, amountMm: 600, perEdge: {} }),
+            ...patch,
+          },
+        }
+      : f)))
+  }, [])
+
+  const updateRoof = useCallback((patch: Partial<{ enabled: boolean; type: RoofUnit['type']; parapetHeightMm: number; pitchSun: number; ridgeAxis: RoofUnit['ridgeAxis']; monoDownhill: RoofUnit['monoDownhill']; apexHeightMm: number; excludeUpperShadows: boolean }>) => {
+    setFloors(prev => prev.map(f => {
+      if (f.id !== activeFloorId) return f
+      const units = Array.isArray(f.roofUnits) ? [...f.roofUnits] as RoofUnit[] : []
+      const idx = units.findIndex(u => u.footprint?.kind === 'outer')
+      const cur = idx >= 0 ? units[idx] : null
+      const enabled = patch.enabled ?? (cur != null)
+      if (!enabled) {
+        if (idx >= 0) units.splice(idx, 1)
+        return { ...f, roofUnits: units }
+      }
+      const nextType = (patch.type ?? cur?.type ?? 'flat') as RoofUnit['type']
+      const base: RoofUnit = cur ?? {
+        id: 'roof_' + Math.random().toString(36).slice(2, 8),
+        type: nextType,
+        footprint: { kind: 'outer' },
+        excludeUpperShadows: cur?.excludeUpperShadows ?? true,
+      }
+      base.type = nextType
+      if (nextType === 'flat') {
+        base.parapetHeightMm = patch.parapetHeightMm ?? base.parapetHeightMm ?? 150
+      }
+      if (nextType === 'gable') {
+        base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 4
+        base.ridgeAxis = (patch.ridgeAxis ?? base.ridgeAxis ?? 'NS') as any
+      }
+      if (nextType === 'hip') {
+        base.mode = 'byApex'
+        base.apexHeightMm = patch.apexHeightMm ?? base.apexHeightMm ?? 0
+        base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 4
+        base.ridgeAxis = (patch.ridgeAxis ?? base.ridgeAxis ?? 'NS') as any
+      }
+      if (nextType === 'mono') {
+        base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 3
+        base.monoDownhill = (patch.monoDownhill ?? base.monoDownhill ?? 'E') as any
+        base.apexHeightMm = patch.apexHeightMm ?? base.apexHeightMm ?? 0
+      }
+      if (typeof patch.excludeUpperShadows === 'boolean') {
+        base.excludeUpperShadows = patch.excludeUpperShadows
+      }
+      if (idx >= 0) units[idx] = base
+      else units.push(base)
+      return { ...f, roofUnits: units }
+    }))
+  }, [activeFloorId])
+
+  const applyTemplateToActiveFloor = useCallback((nextTemplate: TemplateKind) => {
+    setTemplate(nextTemplate)
+    setFloors(prev => prev.map(f => (f.id === activeFloorId
+      ? {
+          ...f,
+          shape: createDefaultShape(nextTemplate),
+        }
+      : f)))
+  }, [activeFloorId])
 
   // 日本語コメント: エディタ初期化（確認ダイアログ→状態リセット→LS消去）
   const resetEditor = () => {
@@ -184,147 +259,115 @@ export default function Page() {
     if (f) setTemplate(f.shape.kind)
   }, [activeFloorId, floors])
 
-  return (
-    <div className="h-dvh flex flex-col">
-      <TopBar onSave={onSave} onLoad={onLoad} onPreview={() => setPreviewOpen(true)} onReset={resetEditor} />
-      {/* 日本語コメント: 読み込み用の非表示ファイル入力 */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/json,.json"
-        style={{ display: 'none' }}
-        onChange={async (e) => {
-          const file = e.target.files?.[0]
-          if (!file) return
-          try {
-            const text = await file.text()
-            const data = parseSaveData(text)
-            const restored = data.floors.map(pf => persistFloorToState(pf))
-            setFloors(restored)
-            if (data.activeFloorId && restored.some(f => f.id === data.activeFloorId)) {
-              setActiveFloorId(data.activeFloorId)
-            } else {
-              setActiveFloorId(restored[0].id)
-            }
-          } catch (err:any) {
-            alert(`読み込みに失敗しました: ${err?.message ?? err}`)
-          }
-        }}
-      />
-      <div className="flex flex-1 overflow-hidden">
-          <Sidebar
-            expanded={expanded}
-            current={view}
-            onSelectView={setView}
-            onToggle={() => setExpanded(v => !v)}
-            onSelectTemplate={(k) => {
-              setTemplate(k)
-              // アクティブ階の形状種別を切り替え（既定パラメータに初期化）
-              setFloors(prev => prev.map(f => f.id === activeFloorId ? {
-                ...f,
-                shape: createDefaultShape(k),
-              } : f))
-            }}
-            currentTemplate={template}
+  const editorActions = useMemo(() => ({
+    addFloorAboveActive,
+    duplicateActiveFloor,
+    removeActiveFloor,
+    patchFloor,
+    renameFloor,
+    updateEaves,
+    updateRoof,
+    applyTemplateToActive: applyTemplateToActiveFloor,
+  }), [
+    addFloorAboveActive,
+    duplicateActiveFloor,
+    removeActiveFloor,
+    patchFloor,
+    renameFloor,
+    updateEaves,
+    updateRoof,
+    applyTemplateToActiveFloor,
+  ])
+
+  const editorContextValue = useMemo(() => ({
+    floors,
+    setFloors,
+    activeFloorId,
+    setActiveFloorId,
+    view,
+    setView,
+    template,
+    setTemplate,
+    dimensions,
+    setDimensions,
+    snap,
+    setSnap,
+    actions: editorActions,
+  }), [floors, activeFloorId, view, template, dimensions, snap, editorActions])
+
+  const topBar = (
+    <TopBar onSave={onSave} onLoad={onLoad} onPreview={() => setPreviewOpen(true)} onReset={resetEditor} />
+  )
+
+  const sidebar = (
+    <Sidebar
+      expanded={expanded}
+      onToggle={() => setExpanded(v => !v)}
+    />
+  )
+
+  const mainContent = (
+    <div className="flex h-full w-full">
+      {view === 'plan' && (
+        <div className="flex-1">
+          <CanvasArea
+            key={resetKey}
+            template={template}
             floors={floors}
             activeFloorId={activeFloorId}
-            onSelectFloor={setActiveFloorId}
-            onAddFloor={addFloorAboveActive}
-            onDuplicateFloor={duplicateActiveFloor}
-            onRemoveFloor={removeActiveFloor}
-            onPatchFloor={patchFloor}
-            onRenameFloor={renameFloor}
-            snap={snap}
-          onUpdateSnap={(patch) => setSnap(s => ({ ...s, ...patch }))}
-            dimensions={dimensions}
-            onUpdateDimensions={(patch) => setDimensions(d => ({ ...d, ...patch }))}
-            // 日本語コメント: 軒の出はフロアごと。サイドバー操作はアクティブ階に反映
-            eaves={floors.find(f => f.id === activeFloorId)?.eaves}
-            onUpdateEaves={(patch) => setFloors(prev => prev.map(f => f.id === activeFloorId ? { ...f, eaves: { ...(f.eaves ?? { enabled:false, amountMm:600, perEdge:{} }), ...patch } } : f))}
-            // 日本語コメント: 屋根（統合）
-            roof={(() => {
-              const act = floors.find(f => f.id === activeFloorId)
-              const ru = act?.roofUnits?.find(u => u.footprint?.kind === 'outer')
-              if (!ru) return { enabled: false, type: 'flat' as const, parapetHeightMm: 150, ridgeAxis: 'NS' as const, monoDownhill: 'E' as const, pitchSun: 3, apexHeightMm: 0 }
-              return {
-                enabled: true,
-                type: ru.type,
-                parapetHeightMm: ru.parapetHeightMm,
-                pitchSun: ru.pitchSun,
-                ridgeAxis: ru.ridgeAxis as any,
-                monoDownhill: ru.monoDownhill as any,
-                apexHeightMm: ru.apexHeightMm,
-                excludeUpperShadows: ru.excludeUpperShadows ?? true,
+            activeShape={floors.find(f => f.id === activeFloorId)?.shape as any}
+            onUpdateActiveFloorShape={(id, shape) => setFloors(prev => prev.map(f => f.id === id ? { ...f, shape: shape as any } : f))}
+            snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }}
+            dimensionOptions={dimensions}
+          eavesOptions={floors.find(f => f.id === activeFloorId)?.eaves}
+          onUpdateEaves={updateEaves}
+        />
+        </div>
+      )}
+      {view === 'elev' && (
+        <div className="flex-1 overflow-auto">
+          <ElevationView floors={floors.filter(f => f.visible)} />
+        </div>
+      )}
+      {view === '3d' && (
+        <div className="flex-1">
+          <Wireframe3D floors={floors.filter(f => f.visible)} />
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <EditorStateProvider value={editorContextValue}>
+      <EditorShell topBar={topBar} sidebar={sidebar} main={mainContent}>
+        {/* 日本語コメント: 読み込み用の非表示ファイル入力 */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          style={{ display: 'none' }}
+          onChange={async (e) => {
+            const file = e.target.files?.[0]
+            if (!file) return
+            try {
+              const text = await file.text()
+              const data = parseSaveData(text)
+              const restored = data.floors.map(pf => persistFloorToState(pf))
+              setFloors(restored)
+              if (data.activeFloorId && restored.some(f => f.id === data.activeFloorId)) {
+                setActiveFloorId(data.activeFloorId)
+              } else {
+                setActiveFloorId(restored[0].id)
               }
-            })()}
-            onUpdateRoof={(patch) => setFloors(prev => prev.map(f => {
-              if (f.id !== activeFloorId) return f
-              const units = Array.isArray(f.roofUnits) ? [...f.roofUnits] as RoofUnit[] : []
-              const idx = units.findIndex(u => u.footprint?.kind === 'outer')
-              const cur = idx >= 0 ? units[idx] : null
-              const enabled = patch.enabled ?? (cur != null)
-              if (!enabled) {
-                if (idx >= 0) units.splice(idx, 1)
-                return { ...f, roofUnits: units }
-              }
-              const nextType = (patch.type ?? cur?.type ?? 'flat') as RoofUnit['type']
-              const base: RoofUnit = cur ?? {
-                id: 'roof_' + Math.random().toString(36).slice(2, 8),
-                type: nextType,
-                footprint: { kind: 'outer' },
-                excludeUpperShadows: cur?.excludeUpperShadows ?? true,
-              }
-              base.type = nextType
-              // 共通/個別プロパティを更新
-              if (nextType === 'flat') {
-                base.parapetHeightMm = patch.parapetHeightMm ?? base.parapetHeightMm ?? 150
-              }
-              if (nextType === 'gable') {
-                base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 4
-                base.ridgeAxis = (patch.ridgeAxis ?? base.ridgeAxis ?? 'NS') as any
-              }
-              if (nextType === 'hip') {
-                base.mode = 'byApex'
-                base.apexHeightMm = patch.apexHeightMm ?? base.apexHeightMm ?? 0
-                base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 4
-                base.ridgeAxis = (patch.ridgeAxis ?? base.ridgeAxis ?? 'NS') as any
-              }
-              if (nextType === 'mono') {
-                base.pitchSun = patch.pitchSun ?? base.pitchSun ?? 3
-                base.monoDownhill = (patch.monoDownhill ?? base.monoDownhill ?? 'E') as any
-                base.apexHeightMm = patch.apexHeightMm ?? base.apexHeightMm ?? 0
-              }
-              if (typeof patch.excludeUpperShadows === 'boolean') {
-                base.excludeUpperShadows = patch.excludeUpperShadows
-              }
-              if (idx >= 0) units[idx] = base; else units.push(base)
-              return { ...f, roofUnits: units }
-            }))}
-          />
-        <main className="flex-1">
-          {view === 'plan' && (
-            <CanvasArea
-              key={resetKey}
-              template={template}
-              floors={floors}
-              activeFloorId={activeFloorId}
-              activeShape={floors.find(f => f.id === activeFloorId)?.shape as any}
-              onUpdateActiveFloorShape={(id, shape) => setFloors(prev => prev.map(f => f.id === id ? { ...f, shape: shape as any } : f))}
-              snapOptions={{ ...snap, anchor: { x: 0, y: 0 } }}
-              dimensionOptions={dimensions}
-              eavesOptions={floors.find(f => f.id === activeFloorId)?.eaves}
-              onUpdateEaves={(id, patch) => setFloors(prev => prev.map(f => f.id === id ? { ...f, eaves: { ...(f.eaves ?? { enabled:false, amountMm:600, perEdge:{} }), ...patch } } : f))}
-            />
-          )}
-          {view === 'elev' && (
-            <ElevationView floors={floors.filter(f => f.visible)} />
-          )}
-          {view === '3d' && <Wireframe3D floors={floors.filter(f => f.visible)} />}
-        </main>
-      </div>
+            } catch (err:any) {
+              alert(`読み込みに失敗しました: ${err?.message ?? err}`)
+            }
+          }}
+        />
+      </EditorShell>
       {previewOpen && (
         <PreviewOverlay floors={floors} onClose={() => setPreviewOpen(false)} />
       )}
-    </div>
+    </EditorStateProvider>
   )
 }

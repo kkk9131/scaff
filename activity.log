@@ -639,3 +639,77 @@
 2025-09-21 02:40: 実線優先の表示ルールを厳密化
 - 立面: 壁（実線）を最後に重ね描きし、屋根（点線）より優先表示（src/components/ElevationView.tsx）
 - 3D: 実線と完全一致する点線（重複）を除去する重複排除を追加（src/core/wireframe-3d.ts, src/components/Wireframe3D.tsx）
+2025-09-21 02:55: 立面の切妻/片流れで天井水平実線を非表示
+- 壁アウトラインをエッジ単位で描画し、gable/monoでは上辺（天井水平線）を描かない
+- 「壁=実線・屋根=点線、重なりは実線優先」の整合を維持（src/components/ElevationView.tsx）
+2025-09-21 03:05: 切妻の棟側のみ天井水平実線を表示
+- ridgeAxis に沿う方向（棟側）では上辺の水平実線を描画、妻側では非表示
+- 片流れは引き続き上辺非表示（src/components/ElevationView.tsx）
+2025-09-21 03:15: 切妻の妻側の壁ラインを三角形に
+- 妻側では天井水平実線の代わりに、頂点（棟高）へ向かう左右の斜辺を実線描画
+- 棟側/妻側の判定を修正（NS→東西が棟側、EW→南北が棟側）（src/components/ElevationView.tsx）
+2025-09-21 03:25: 切妻の高さ算出を方向に依存しない式に統一
+- 勾配軸の半幅×勾配で棟高を算出（NS→X半幅、EW→Y半幅）。三角/棟側表示とも同一高さに揃える
+- 東西/南北で高さがズレないよう修正（src/components/ElevationView.tsx）
+2025-09-21 03:30: 切妻の上辺描画条件を屋根ロジックと同期
+- 妻側（三角面）のみ上辺を非表示にし、棟側では表示するよう判定を統一
+- 条件式は axisIsX と ridgeAxis の組合せで屋根描画と一致（src/components/ElevationView.tsx）
+2025-09-21 03:40: 妻側の壁ライン（三角上端）を復活
+- 壁ライン優先により、切妻の妻側は上端を実線の三角で表現（高さは棟高Δで統一）
+- 方向依存のブレを避けるため runSlope×(寸/10) を再使用（src/components/ElevationView.tsx）
+2025-09-21 03:50: 片流れの棟面（低い側）で天井水平実線を表示
+- UIの「高い面」の反対側= monoDownhill（低い側）を棟面と見なし、その立面では上辺水平実線を描画
+- 他の面では上辺を非表示のまま（src/components/ElevationView.tsx）
+2025-09-21 04:00: 片流れの流れ面で壁上端を屋根ラインと平行化
+- 高面/棟面以外の2面（勾配軸に直交）は、棟高に合わせた水平の壁上端実線を描画
+- 壁=実線・屋根=点線、重なりは実線優先の原則を維持（src/components/ElevationView.tsx）
+2025-09-21 04:10: 片流れの流れ面で壁外は点線（屋根ライン）に限定
+- 屋根上端（点線）を壁内/壁外で分割。壁外部分のみ点線、壁内は後段の壁オーバーレイで実線化
+- 余分な実線・点線の重なりを解消（src/components/ElevationView.tsx）
+2025-09-21 04:15: 片流れの三角面の斜辺を点線化
+- 流れ面（正面）における屋根の斜辺は屋根ラインのため点線で描画
+- 壁ラインとの優先関係はこれまで通り（src/components/ElevationView.tsx）
+2025-09-21 04:20: 片流れの三角面でも壁上端（実線）を屋根斜辺と並行に
+- eaves投影スパンから棟位置を求め、壁矩形内で斜辺と並行な実線を描画
+- 上部に“壁が無い”状態を解消しつつ、壁=実線/屋根=点線の優先を維持（src/components/ElevationView.tsx）
+2025-09-21 04:25: 流れ面の一方向で壁ラインの向きが逆転する問題を修正
+- apex側の判定に画面のflip（north/west）を反映し、downhillのスクリーン方向から高側を安定決定
+- 左右の選択を bxL/bxR に正しくマップ（src/components/ElevationView.tsx）
+2025-09-21 04:35: 片流れ三角面の壁上端が一部欠落する問題を修正
+- eaves投影スパンが取得できない場合に、矩形幅（xl..xr）へフォールバックして必ず壁ラインを描画
+- 方向やスパン分割の影響でbestスパンが見つからないケースをカバー（src/components/ElevationView.tsx）
+2025-09-21 04:45: 片流れ三角面で屋根斜辺（点線）を壁内では描かないよう分割
+- 斜辺を壁内/壁外で分割し、壁外のみ点線描画。壁内は後段の壁オーバーレイ（実線）が優先
+- 北面（downhill=E など）の上部が点線になる問題を解消（src/components/ElevationView.tsx）
+2025-09-21 04:55: ビルドエラー修正（重複定義の解消）
+- `wallL`/`wallR` の重複定義を分離（dash用変数に改名）し、TypeScriptのエラーを解消（src/components/ElevationView.tsx）
+2025-09-23 12:06: 片流れ立面図の表示を修正
+- 軒の出コネクタを垂直→水平の2線分に変更し壁端と厳密に一致
+- 棟面/流れ面の四角形で上辺（屋根ライン）が必ず描画されるよう判定を補強
+
+2025-09-23: 片流れ立面図の低い側上辺の高さを修正
+- downhill面の上辺を棟高ではなく壁天端で水平描画に変更（不自然な段差を解消）
+- 屋根点線は壁内に描かず、重なりは壁（実線）優先の原則を維持（src/components/ElevationView.tsx）
+
+2025-09-23 13:10: 片流れ・三角側面の軒先表現を自然化
+- 三角側面で屋根斜線の両端から壁の斜め上端へ向けた縦点線を追加（鼻隠しの落ちを表現）
+- 壁内外の分割は維持し、重なりは壁（実線）優先（src/components/ElevationView.tsx）
+
+2025-09-23 13:35: 片流れの見え方を方角に依存しないロジックへ統一
+- downhill→画面Xの右向きを正規化して lowOnLeft を判定（北/南/東/西いずれでも同一ルール）
+- 三角側面と壁上端（三角実線）の双方で同じ判定を使用（src/components/ElevationView.tsx）
+2025-09-25 16:56: フェーズ1PoC要件を再整理
+- PoC要件を10章構成で整理し必要な入出力・表示仕様を明文化（docs/作図エディタ要件定義書.md）
+- 長期ビジョン節を追加して将来拡張との関係性を明記
+2025-09-25 17:14: フェーズ1タスク計画と基盤レイアウト整備
+- フェーズ1 PoC 向けタスク一覧（英日併記）を docs/phase1-poc-task-plan.md/.ja.md に追加
+- EditorShell レイアウトと EditorStateProvider を導入し、ページ構成を骨組み化（src/ui/layout/EditorShell.tsx, src/core/state/editor-context.tsx, src/app/page.tsx）
+2025-09-25 17:37: EditorStateコンテキストをSidebarへ適用
+- SidebarがEditorStateProviderから状態/アクションを取得するようリファクタし、props依存を解消（src/components/Sidebar.tsx）
+- EditorStateにアクション群を追加しPageで提供、applyTemplateなどの基盤ロジックを整理（src/core/state/editor-context.tsx, src/app/page.tsx）
+2025-09-25 18:27: Konvaベースの平面描画へ移行
+- konva/react-konvaを追加し描画基盤を再構築（package.json, package-lock.json）
+- CanvasAreaをStage+Layer構成にリファクタし、既存寸法/軒表示ロジックをKonvaに適合（src/components/CanvasArea.tsx）
+- DOMイベントとズームUIをKonvaステージへ接続し再描画処理を調整
+2025-09-25 23:37: React18互換のreact-konvaへ調整
+- react-konvaを18.2.8へダウングレードし、ランタイム互換エラーを解消（package.json, package-lock.json）

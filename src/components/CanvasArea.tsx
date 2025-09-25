@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Stage, Layer } from 'react-konva'
+import type Konva from 'konva'
 // 日本語コメント: 内部モデル（mm単位）と座標変換のユーティリティ
 import { DEFAULT_PX_PER_MM, type Vec2 } from '@/core/units'
 import { TemplateKind, INITIAL_RECT, outlineRect, INITIAL_L, INITIAL_U, INITIAL_T, outlineL, outlineU, outlineT, outlinePoly, bboxOfL, bboxOfU, bboxOfT, bboxOfPoly } from '@/core/model'
-import { lengthToScreen, modelToScreen, screenToModel } from '@/core/transform'
+import { modelToScreen, screenToModel } from '@/core/transform'
 import { applySnaps, SNAP_DEFAULTS, type SnapOptions } from '@/core/snap'
 import { COLORS, withAlpha } from '@/ui/colors'
 import { pickFloorColorsByName } from '@/ui/palette'
@@ -18,7 +20,9 @@ import { buildOffsetLines, adjustedSegmentEndpoints } from '@/core/eaves/helpers
 // 日本語コメント: 辺クリック→寸法入力（mm）に対応
 export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState[]; activeFloorId?: string; activeShape?: { kind: TemplateKind; data: any }; onUpdateActiveFloorShape?: (id: string, shape: { kind: TemplateKind; data: any }) => void; snapOptions?: SnapOptions; dimensionOptions?: { show: boolean; outsideMode?: 'auto'|'left'|'right'; offset?: number; offsetUnit?: 'px'|'mm'; decimals?: number; avoidCollision?: boolean }; eavesOptions?: { enabled: boolean; amountMm: number; perEdge?: Record<number, number> }; onUpdateEaves?: (id: string, patch: Partial<{ enabled: boolean; amountMm: number; perEdge: Record<number, number> }>) => void }> = ({ template = 'rect', floors = [], activeFloorId, activeShape, onUpdateActiveFloorShape, snapOptions, dimensionOptions, eavesOptions, onUpdateEaves }) => {
   // 日本語コメント: 平面図キャンバス。内部モデル(mm)→画面(px)で変換し、初期長方形を描画する。
-  const ref = useRef<HTMLCanvasElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const stageRef = useRef<Konva.Stage | null>(null)
+  const layerRef = useRef<Konva.Layer | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dimEngineRef = useRef(new DimensionEngine())
   // 寸法設定は描画クロージャから参照するためRefに保持
@@ -32,8 +36,10 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
   // 日本語コメント: ズームとパンの状態（px基準）。zoomはオートフィットに対する倍率。
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState<{x:number;y:number}>({ x: 0, y: 0 })
+  const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 800, height: 600 })
   const zoomRef = useRef(1)
   const panRef = useRef<{x:number;y:number}>({ x: 0, y: 0 })
+  const stageSizeRef = useRef(stageSize)
   const [rectMm, setRectMm] = useState(INITIAL_RECT)
   const [lMm, setLMm] = useState(INITIAL_L)
   const [uMm, setUMm] = useState(INITIAL_U)
@@ -126,6 +132,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
   }, [])
   const convertToPolyRef = useRef(convertToPoly)
   useEffect(() => { convertToPolyRef.current = convertToPoly }, [convertToPoly])
+  useEffect(() => { stageSizeRef.current = stageSize }, [stageSize])
   const pointerDownRef = useRef(false)
   useEffect(() => { templateRef.current = template; drawRef.current?.() }, [template])
   // アクティブ階やフロア構成が変わったら再描画
@@ -177,20 +184,45 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
   // 日本語コメント: キャンバスイベントと描画ループは一度だけ登録し、可変値はRefで参照する
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const canvas = ref.current!
-    const ctx = canvas.getContext('2d')!
+    const stage = stageRef.current
+    const layer = layerRef.current
+    const container = containerRef.current
+    if (!stage || !layer || !container) return
+    const stageDom = stage.container()
+
+    const getContext = () => (layer.getContext() as any)._context as CanvasRenderingContext2D
+    const ensureCanvasSize = (width: number, height: number, dpr: number) => {
+      const sceneCanvas = layer.getCanvas()
+      const hitCanvas = layer.getHitCanvas()
+      sceneCanvas.setSize({ width: width * dpr, height: height * dpr })
+      hitCanvas.setSize({ width: width * dpr, height: height * dpr })
+    }
+
+    const initialRect = container.getBoundingClientRect()
+    if (initialRect.width > 0 && initialRect.height > 0) {
+      const initWidth = Math.max(1, Math.round(initialRect.width))
+      const initHeight = Math.max(1, Math.round(initialRect.height))
+      stageSizeRef.current = { width: initWidth, height: initHeight }
+      setStageSize(prev => (prev.width === initWidth && prev.height === initHeight ? prev : { width: initWidth, height: initHeight }))
+    }
 
     const draw = () => {
       const dpr = window.devicePixelRatio || 1
-      const cssBounds = canvas.getBoundingClientRect()
+      const sizeNow = stageSizeRef.current
+      const width = Math.max(1, sizeNow.width)
+      const height = Math.max(1, sizeNow.height)
 
-      // 日本語コメント: キャンバスの物理解像度を DPR に合わせ、描画座標は CSS px で扱う
-      canvas.width = Math.round(cssBounds.width * dpr)
-      canvas.height = Math.round(cssBounds.height * dpr)
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0) // 以後の描画は CSS px 基準
+      stage.size({ width, height })
+      layer.size({ width, height })
+      ensureCanvasSize(width, height, dpr)
 
-      // 画面クリア
-      ctx.clearRect(0, 0, cssBounds.width, cssBounds.height)
+      const ctx = getContext()
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, width * dpr, height * dpr)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, width, height)
+
+      const cssBounds = { width, height }
 
       // 日本語コメント: スケール（px/mm）。形状のバウンディングボックスでオートフィットし、ユーザー倍率を適用。
       const kind = templateRef.current
@@ -650,16 +682,30 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         ctx.fillStyle = '#e57373'
         ctx.fillText('LOCKED（編集不可）', 10, 82)
       }
+      layer.batchDraw()
     }
     drawRef.current = draw
 
     draw()
-    const ro = new ResizeObserver(draw)
-    ro.observe(canvas)
+    const ro = new ResizeObserver((entries) => {
+      if (!entries.length) return
+      const entry = entries[0]
+      const nextWidth = Math.max(1, Math.round(entry.contentRect.width))
+      const nextHeight = Math.max(1, Math.round(entry.contentRect.height))
+      const changed = stageSizeRef.current.width !== nextWidth || stageSizeRef.current.height !== nextHeight
+      if (changed) {
+        stageSizeRef.current = { width: nextWidth, height: nextHeight }
+        setStageSize(prev => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }))
+      }
+      requestAnimationFrame(() => {
+        drawRef.current?.()
+      })
+    })
+    ro.observe(container)
     // 日本語コメント: クリックで辺をヒットテストし、mm入力で寸法更新（rectのみ）
     const onClick = (ev: MouseEvent) => {
       if (activeLockedRef.current) return
-      const cssBounds = canvas.getBoundingClientRect()
+      const cssBounds = stageDom.getBoundingClientRect()
       const x = ev.clientX - cssBounds.left
       const y = ev.clientY - cssBounds.top
 
@@ -944,7 +990,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         draw()
       }
     }
-    canvas.addEventListener('click', onClick)
+    stageDom.addEventListener('click', onClick)
 
     // 日本語コメント: 頂点ドラッグ編集（フェーズ2: まずは矩形に対応）
     let draggingVertexIdx: number | null = null
@@ -955,7 +1001,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       pointerDownRef.current = true
       const releasePointer = () => { pointerDownRef.current = false }
       window.addEventListener('mouseup', releasePointer, { once: true })
-      const cssBounds = canvas.getBoundingClientRect()
+      const cssBounds = stageDom.getBoundingClientRect()
       const x = ev.clientX - cssBounds.left
       const y = ev.clientY - cssBounds.top
       let kind = templateRef.current
@@ -998,7 +1044,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
 
     const onMouseMove = (ev: MouseEvent) => {
       if (draggingVertexIdx == null) return
-      const cssBounds = canvas.getBoundingClientRect()
+      const cssBounds = stageDom.getBoundingClientRect()
       const x = ev.clientX - cssBounds.left
       const y = ev.clientY - cssBounds.top
       const pxPerMm = dragPxPerMm ?? DEFAULT_PX_PER_MM
@@ -1102,12 +1148,12 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       pointerDownRef.current = false
     }
 
-    canvas.addEventListener('mousedown', onMouseDown)
+    stageDom.addEventListener('mousedown', onMouseDown)
 
     // 日本語コメント: ホイール/ピンチでズーム（カーソル位置を中心に）。Ctrl+ホイールも対応。
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault()
-      const cssBounds = canvas.getBoundingClientRect()
+      const cssBounds = stageDom.getBoundingClientRect()
       if (pointerDownRef.current && draggingVertexIdx == null) {
         const nextPan = {
           x: panRef.current.x - ev.deltaX,
@@ -1140,12 +1186,12 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
       setPan(newPan)
       draw()
     }
-    canvas.addEventListener('wheel', onWheel, { passive: false })
+    stageDom.addEventListener('wheel', onWheel, { passive: false })
 
     // 日本語コメント: キーボードでズーム（+/-/0）。0でリセット。
     const onKey = (e: KeyboardEvent) => {
       if (e.key === '+' || e.key === '=') {
-        const cssBounds = canvas.getBoundingClientRect()
+        const cssBounds = stageDom.getBoundingClientRect()
         const cx = cssBounds.width / 2, cy = cssBounds.height / 2
         const kind = templateRef.current
         const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
@@ -1159,7 +1205,7 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
         zoomRef.current = nextZoom; panRef.current = newPan
         setZoom(nextZoom); setPan(newPan); draw()
       } else if (e.key === '-') {
-        const cssBounds = canvas.getBoundingClientRect()
+        const cssBounds = stageDom.getBoundingClientRect()
         const cx = cssBounds.width / 2, cy = cssBounds.height / 2
         const kind = templateRef.current
         const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
@@ -1185,26 +1231,35 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
 
     return () => {
       ro.disconnect()
-      canvas.removeEventListener('click', onClick)
-      canvas.removeEventListener('mousedown', onMouseDown)
-      canvas.removeEventListener('wheel', onWheel)
+      stageDom.removeEventListener('click', onClick)
+      stageDom.removeEventListener('mousedown', onMouseDown)
+      stageDom.removeEventListener('wheel', onWheel)
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('mousemove', onMouseMove)
     }
   }, [])
 
   return (
-    <div className="w-full h-full relative">
-      <canvas ref={ref} className="w-full h-full bg-surface-canvas" />
+    <div ref={containerRef} className="relative w-full h-full">
+      <Stage
+        ref={stageRef}
+        width={stageSize.width}
+        height={stageSize.height}
+        className="bg-surface-canvas"
+        style={{ position: 'absolute', top: 0, left: 0 }}
+      >
+        <Layer ref={layerRef} listening={false} />
+      </Stage>
       <svg ref={svgRef} className="absolute inset-0 pointer-events-none" />
-      
+
       {/* モダンなズームコントロール */}
       <div className="absolute top-4 right-4 flex items-center gap-2 bg-surface-panel/95 backdrop-blur-sm border border-border-default rounded-lg px-3 py-2 shadow-elevated select-none">
         <button
           className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary hover:text-text-primary transition-all duration-200 font-mono"
           onClick={() => {
-            const el = ref.current!
-            const css = el.getBoundingClientRect()
+            const stageEl = stageRef.current?.container()
+            if (!stageEl) return
+            const css = stageEl.getBoundingClientRect()
             const cx = css.width / 2, cy = css.height / 2
             const kind = templateRef.current
             const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
@@ -1217,21 +1272,23 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
             const newPan = { x: cx - sNew.x, y: cy - sNew.y }
             zoomRef.current = nextZoom; panRef.current = newPan
             setZoom(nextZoom); setPan(newPan)
+            requestAnimationFrame(() => drawRef.current?.())
           }}
           title="ズームアウト"
         >
           <span className="text-sm">−</span>
         </button>
-        
+
         <div className="min-w-16 text-center text-sm font-medium text-text-primary tabular-nums">
           {Math.round(zoom * 100)}%
         </div>
-        
+
         <button
           className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary hover:text-text-primary transition-all duration-200 font-mono"
           onClick={() => {
-            const el = ref.current!
-            const css = el.getBoundingClientRect()
+            const stageEl = stageRef.current?.container()
+            if (!stageEl) return
+            const css = stageEl.getBoundingClientRect()
             const cx = css.width / 2, cy = css.height / 2
             const kind = templateRef.current
             const bb = kind === 'rect' ? rectRef.current : kind === 'l' ? bboxOfL(lRef.current) : kind === 'u' ? bboxOfU(uRef.current) : bboxOfT(tRef.current)
@@ -1244,21 +1301,23 @@ export const CanvasArea: React.FC<{ template?: TemplateKind; floors?: FloorState
             const newPan = { x: cx - sNew.x, y: cy - sNew.y }
             zoomRef.current = nextZoom; panRef.current = newPan
             setZoom(nextZoom); setPan(newPan)
+            requestAnimationFrame(() => drawRef.current?.())
           }}
           title="ズームイン"
         >
           <span className="text-sm">＋</span>
         </button>
-        
+
         <div className="w-px h-6 bg-border-default"></div>
-        
+
         <button
           className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-secondary hover:text-text-primary transition-all duration-200"
-          onClick={() => { 
-            setZoom(1); 
-            setPan({ x: 0, y: 0 }); 
-            zoomRef.current = 1; 
-            panRef.current = { x: 0, y: 0 } 
+          onClick={() => {
+            setZoom(1)
+            setPan({ x: 0, y: 0 })
+            zoomRef.current = 1
+            panRef.current = { x: 0, y: 0 }
+            requestAnimationFrame(() => drawRef.current?.())
           }}
           title="表示をリセット（100%にズーム）"
         >
